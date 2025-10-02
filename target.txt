@@ -11,4 +11,3 @@
 商城：Firebase Functions 處理付款 webhook（Google Play/Billing or Stripe），同步使用者權限到 Firestore。要有交易與退款流程紀錄。
 安全：HTTPS，全程 token 驗證；Firestore 規則限制讀寫；敏感設定（OpenAI key 等）在 Node 端或 Firebase Functions；訊息內容上設 Rate Limit、濾敏感詞。
 App 封裝：以 Capacitor/Ionic 或 Tauri 封裝 Vue3；必要時串接原生模組（推播、In-App Purchases）。
-test
