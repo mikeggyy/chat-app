@@ -503,6 +503,127 @@ export async function listConversations(req, res, next) {
   }
 }
 
+export async function createConversation(req, res, next) {
+  try {
+    const rawId = typeof req.body?.conversationId === 'string' ? req.body.conversationId.trim() : '';
+
+    if (!rawId) {
+      return res.status(400).json({ message: 'conversationId is required' });
+    }
+
+    const payload = req.body ?? {};
+    const cardPayload = normalizeCardPayload(payload.card ?? null);
+
+    const tags =
+      payload.tags !== undefined
+        ? normalizeTags(payload.tags)
+        : cardPayload?.tags ?? undefined;
+    const sampleMessages = mergeSampleMessages(
+      payload.sampleMessages,
+      cardPayload?.sampleMessages
+    );
+
+    const aiName = normalizeString(payload.aiName ?? cardPayload?.name);
+    const aiPersona = normalizeString(payload.aiPersona ?? cardPayload?.persona);
+    const summaryInput =
+      payload.summary ??
+      payload.bio ??
+      cardPayload?.summary ??
+      cardPayload?.persona ??
+      aiPersona;
+    const summary = normalizeString(summaryInput);
+
+    const image =
+      payload.image === null
+        ? null
+        : payload.image !== undefined
+          ? normalizeString(payload.image)
+          : undefined;
+
+    const intimacyPayload = payload.intimacy ?? null;
+    const hasIntimacy = intimacyPayload && typeof intimacyPayload === 'object';
+
+    const { conversationRef, conversation, created } = await ensureConversationDocument(
+      req.user.uid,
+      rawId
+    );
+
+    const updates = {};
+
+    if (cardPayload) {
+      updates.card = cardPayload;
+    }
+
+    if (tags !== undefined) {
+      updates.tags = tags;
+    }
+
+    if (sampleMessages.length) {
+      updates.sampleMessages = sampleMessages;
+    }
+
+    if (aiName) {
+      updates.aiName = aiName;
+    }
+
+    if (aiPersona) {
+      updates.aiPersona = aiPersona;
+    }
+
+    if (summary) {
+      updates.bio = summary;
+      updates.summary = summary;
+    }
+
+    if (image !== undefined) {
+      updates.image = image && image.length ? image : null;
+    }
+
+    if (payload.imageStoragePath !== undefined) {
+      updates.imageStoragePath =
+        typeof payload.imageStoragePath === 'string' ? payload.imageStoragePath : null;
+    }
+
+    if (typeof payload.isFavorite === 'boolean') {
+      updates.isFavorite = payload.isFavorite;
+    }
+
+    if (hasIntimacy) {
+      const intimacy = normalizeIntimacy(intimacyPayload);
+      updates.intimacy = intimacy;
+
+      const defaultLabel = buildDefaultIntimacyLabel(intimacy.level);
+      const sanitizedLabel = sanitizeIntimacyLabel(
+        typeof payload.intimacyLabel === 'string' ? payload.intimacyLabel : '',
+        defaultLabel
+      );
+      const match = sanitizedLabel.match(/^親密度等級\s*(\d+)/);
+      updates.intimacyLabel =
+        match && Number.parseInt(match[1], 10) === intimacy.level
+          ? sanitizedLabel
+          : defaultLabel;
+    } else if (typeof payload.intimacyLabel === 'string') {
+      updates.intimacyLabel = sanitizeIntimacyLabel(
+        payload.intimacyLabel,
+        buildDefaultIntimacyLabel()
+      );
+    }
+
+    updates.updatedAt = Date.now();
+
+    if (Object.keys(updates).length) {
+      await conversationRef.set(updates, { merge: true });
+    }
+
+    const latestSnapshot = await conversationRef.get();
+    const normalized = normalizeConversationDocument(latestSnapshot) ?? conversation;
+
+    res.status(created ? 201 : 200).json({ data: normalized });
+  } catch (error) {
+    next(error);
+  }
+}
+
 export async function getConversationMessages(req, res, next) {
   try {
     const { conversationId } = req.params;

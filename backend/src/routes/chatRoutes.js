@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import {
+  createConversation,
   clearConversationMessages,
   deleteConversation,
   generateSuggestions,
@@ -13,6 +14,7 @@ import { authenticate } from '../middleware/auth.js';
 const router = Router();
 
 router.use(authenticate);
+router.post('/', createConversation);
 router.get('/', listConversations);
 router.get('/:conversationId/messages', getConversationMessages);
 router.post('/:conversationId/messages', (req, res, next) => {

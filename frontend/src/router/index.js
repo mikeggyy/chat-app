@@ -1,4 +1,4 @@
-﻿import { createRouter, createWebHistory } from 'vue-router';
+import { createRouter, createWebHistory } from 'vue-router';
 import { useAuthStore } from '../stores/authStore';
 
 const routes = [
@@ -73,6 +73,20 @@ router.beforeEach(async (to) => {
   authStore.init();
   await authStore.ensureAuthReady();
 
+  if (authStore.isAuthenticated && to.name !== 'login') {
+    try {
+      await authStore.syncBackendSession();
+    } catch (error) {
+      // eslint-disable-next-line no-console
+      console.error('Session verification failed before navigation', error);
+      await authStore.logout();
+      return {
+        name: 'login',
+        query: to.fullPath ? { redirect: to.fullPath } : {},
+      };
+    }
+  }
+
   if (to.meta.requiresAuth && !authStore.isAuthenticated) {
     return {
       name: 'login',
@@ -89,3 +103,4 @@ router.beforeEach(async (to) => {
 });
 
 export default router;
+

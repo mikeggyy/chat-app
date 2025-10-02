@@ -428,6 +428,53 @@ export const useChatStore = defineStore('chat', {
         this.loading = false;
       }
     },
+    async ensureConversation(conversationId, metadata = {}) {
+      const trimmedId =
+        typeof conversationId === 'string' ? conversationId.trim() : '';
+      if (!trimmedId) {
+        return null;
+      }
+
+      const payload = { conversationId: trimmedId, ...metadata };
+
+      if (Array.isArray(payload.tags)) {
+        payload.tags = payload.tags
+          .map((tag) => (typeof tag === 'string' ? tag.trim() : ''))
+          .filter(Boolean);
+      }
+
+      if (Array.isArray(payload.sampleMessages)) {
+        payload.sampleMessages = payload.sampleMessages
+          .map((message) => (typeof message === 'string' ? message.trim() : ''))
+          .filter(Boolean);
+      }
+
+      if (payload.card && typeof payload.card === 'object') {
+        const card = { ...payload.card };
+        if (Array.isArray(card.sampleMessages)) {
+          card.sampleMessages = card.sampleMessages
+            .map((message) => (typeof message === 'string' ? message.trim() : ''))
+            .filter(Boolean);
+        }
+        payload.card = card;
+      }
+
+      try {
+        const response = await apiRequest('/chats', {
+          method: 'POST',
+          body: payload,
+        });
+
+        const conversation = response?.data ?? null;
+        if (conversation) {
+          this.upsertConversation(conversation);
+        }
+
+        return conversation;
+      } catch (error) {
+        throw error;
+      }
+    },
     selectConversation(id) {
       this.activeConversationId = id;
     },

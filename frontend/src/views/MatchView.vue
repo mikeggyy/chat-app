@@ -78,8 +78,10 @@ import {
   favoriteMatchCard,
   unfavoriteMatchCard,
 } from '../services/matchService';
+import { useChatStore } from '../stores/chatStore';
 
 const router = useRouter();
+const chatStore = useChatStore();
 
 const cards = ref([]);
 const currentIndex = ref(0);
@@ -123,6 +125,12 @@ function normalizeMatchCard(card) {
   const metrics =
     typeof card.metrics === 'object' && card.metrics !== null ? card.metrics : {};
 
+  const sampleMessages = Array.isArray(card.sampleMessages)
+    ? card.sampleMessages
+        .map((message) => (typeof message === 'string' ? message.trim() : ''))
+        .filter(Boolean)
+    : [];
+
   return {
     id: card.id,
     name: card.name ?? '',
@@ -134,6 +142,7 @@ function normalizeMatchCard(card) {
       card.coverImageUrl ??
       card.image ??
       '',
+    sampleMessages,
     metrics,
     isFavorite: Boolean(card.isFavorite),
   };
@@ -242,16 +251,53 @@ async function handleFavoriteToggle() {
   }
 }
 
-function handleEnterChat() {
+async function handleEnterChat() {
   if (isProcessing.value || !currentCard.value) return;
-  isProcessing.value = true;
+
   const card = currentCard.value;
-  setTimeout(() => {
-    isProcessing.value = false;
-    router
+  isProcessing.value = true;
+
+  const sampleMessages = Array.isArray(card.sampleMessages)
+    ? card.sampleMessages
+        .map((message) => (typeof message === 'string' ? message.trim() : ''))
+        .filter(Boolean)
+    : [];
+
+  const metadata = {
+    aiName: card.name ?? 'AI 夥伴',
+    aiPersona: card.persona ?? '',
+    bio: card.bio ?? card.persona ?? '',
+    tags: Array.isArray(card.tags) ? card.tags : [],
+    image: card.image || null,
+    sampleMessages,
+    isFavorite: Boolean(card.isFavorite),
+    card: {
+      id: card.id,
+      name: card.name ?? 'AI 夥伴',
+      persona: card.persona ?? '',
+      summary: card.bio ?? card.persona ?? '',
+      tags: Array.isArray(card.tags) ? card.tags : [],
+      portraitImageUrl: card.image || null,
+      coverImageUrl: card.image || null,
+      sampleMessages,
+    },
+  };
+
+  try {
+    await chatStore.ensureConversation(card.id, metadata);
+    chatStore.selectConversation(card.id);
+
+    await router
       .push({ name: 'chatDetail', params: { conversationId: card.id } })
       .catch(() => {});
-  }, 150);
+  } catch (error) {
+    console.error('[match] failed to ensure conversation', error);
+    setLastAction('error', {
+      message: error?.message ?? '無法開啟對話，請稍後再試',
+    });
+  } finally {
+    isProcessing.value = false;
+  }
 }
 
 function advanceIndex(step = 1) {
@@ -554,4 +600,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-

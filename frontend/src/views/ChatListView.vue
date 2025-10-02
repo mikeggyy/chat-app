@@ -9,7 +9,7 @@
         ]"
         @click="setActiveTab('all')"
       >
-        全部
+        聊天
       </button>
       <button
         type="button"
@@ -304,14 +304,19 @@ async function handleFavorite(conversation) {
         typeof record?.intimacy?.level === "number"
           ? record.intimacy.level
           : conversation?.intimacy?.level;
-      const level = Number.isFinite(levelSource) && levelSource > 0 ? Math.trunc(levelSource) : 1;
+      const level =
+        Number.isFinite(levelSource) && levelSource > 0
+          ? Math.trunc(levelSource)
+          : 1;
       const labelCandidate =
-        typeof record?.intimacy?.label === "string" && record.intimacy.label.trim()
+        typeof record?.intimacy?.label === "string" &&
+        record.intimacy.label.trim()
           ? record.intimacy.label.trim()
-          : typeof record?.intimacyLabel === "string" && record.intimacyLabel.trim()
-            ? record.intimacyLabel.trim()
-            : null;
-      const label = labelCandidate ? labelCandidate : '親密度等級 ' + level;
+          : typeof record?.intimacyLabel === "string" &&
+            record.intimacyLabel.trim()
+          ? record.intimacyLabel.trim()
+          : null;
+      const label = labelCandidate ? labelCandidate : "親密度等級 " + level;
 
       conversation.intimacy = {
         ...(conversation.intimacy ?? {}),
@@ -322,10 +327,11 @@ async function handleFavorite(conversation) {
       conversation.intimacyLabel = label;
     } else if (conversation.intimacy) {
       const level =
-        Number.isFinite(conversation.intimacy.level) && conversation.intimacy.level > 0
+        Number.isFinite(conversation.intimacy.level) &&
+        conversation.intimacy.level > 0
           ? Math.trunc(conversation.intimacy.level)
           : 1;
-      const label = '親密度等級 ' + level;
+      const label = "親密度等級 " + level;
       conversation.intimacy = {
         ...(conversation.intimacy ?? {}),
         level,
