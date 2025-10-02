@@ -22,17 +22,42 @@
           @pointerleave="onPointerLeave"
         >
           <div class="match-card__surface">
-            <div class="match-card__swipe-hints">
+            <div v-if="!showSwipeTutorial" class="match-card__swipe-hints">
               <div class="match-card__hint match-card__hint--left">
                 <span class="match-card__hint-icon">←</span>
+                <span class="match-card__hint-label">左滑略過</span>
               </div>
               <div class="match-card__hint match-card__hint--center">
                 拖曳卡片來探索
               </div>
               <div class="match-card__hint match-card__hint--right">
+                <span class="match-card__hint-label">右滑略過</span>
                 <span class="match-card__hint-icon">→</span>
               </div>
             </div>
+            <Transition name="swipe-tutorial">
+              <div
+                v-if="showSwipeTutorial"
+                class="swipe-tutorial"
+                role="dialog"
+                aria-live="polite"
+                @click.self="dismissSwipeTutorial()"
+              >
+                <div class="swipe-tutorial__content">
+                  <p class="swipe-tutorial__title">左右滑動探索牌組</p>
+                  <p class="swipe-tutorial__body">左滑、右滑、隨意探索。</p>
+                  <div class="swipe-tutorial__actions">
+                    <button
+                      type="button"
+                      class="swipe-tutorial__dismiss"
+                      @click.stop="dismissSwipeTutorial()"
+                    >
+                      我知道了
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
             <img
               :src="currentCard.image"
               :alt="currentCard.name"
@@ -91,7 +116,7 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import BaseLoadingSpinner from "../components/BaseLoadingSpinner.vue";
 import {
@@ -100,9 +125,13 @@ import {
   unfavoriteMatchCard,
 } from "../services/matchService";
 import { useChatStore } from "../stores/chatStore";
+import { useAuthStore } from "../stores/authStore";
 
 const router = useRouter();
 const chatStore = useChatStore();
+const authStore = useAuthStore();
+const GLOBAL_TUTORIAL_KEY = "match_swipe_tutorial_seen";
+const showSwipeTutorial = ref(false);
 
 const cards = ref([]);
 const currentIndex = ref(0);
@@ -127,6 +156,54 @@ const favoriteButtonLabel = computed(() =>
   currentCard.value?.isFavorite ? "取消收藏" : "收藏"
 );
 
+function getTutorialStorageKey() {
+  const uid = authStore.user?.uid;
+  return uid ? `${GLOBAL_TUTORIAL_KEY}_${uid}` : GLOBAL_TUTORIAL_KEY;
+}
+
+function loadSwipeTutorialPreference() {
+  if (typeof window === "undefined") {
+    showSwipeTutorial.value = false;
+    return;
+  }
+
+  try {
+    const globalSeen = window.localStorage.getItem(GLOBAL_TUTORIAL_KEY);
+    const userKey = getTutorialStorageKey();
+    const userSeen = window.localStorage.getItem(userKey);
+
+    if (userSeen || globalSeen) {
+      if (!userSeen && globalSeen && userKey !== GLOBAL_TUTORIAL_KEY) {
+        window.localStorage.setItem(userKey, globalSeen);
+      }
+      showSwipeTutorial.value = false;
+    } else {
+      showSwipeTutorial.value = true;
+    }
+  } catch (error) {
+    showSwipeTutorial.value = false;
+  }
+}
+
+function dismissSwipeTutorial({ persist = true } = {}) {
+  if (!showSwipeTutorial.value) {
+    return;
+  }
+
+  showSwipeTutorial.value = false;
+
+  if (!persist || typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const key = getTutorialStorageKey();
+    window.localStorage.setItem(GLOBAL_TUTORIAL_KEY, "1");
+    window.localStorage.setItem(key, "1");
+  } catch (error) {
+    // ignore storage failures
+  }
+}
 const cardStyle = computed(() => {
   const translate = `translate3d(${dragX.value}px, ${dragY.value}px, 0)`;
   const rotate = `rotate(${dragX.value * 0.04}deg)`;
@@ -216,6 +293,7 @@ function setLastAction(type, payload = {}) {
 }
 
 async function handleFavoriteToggle() {
+  dismissSwipeTutorial();
   if (isProcessing.value || !currentCard.value) return;
 
   isProcessing.value = true;
@@ -277,6 +355,7 @@ async function handleFavoriteToggle() {
 }
 
 async function handleEnterChat() {
+  dismissSwipeTutorial();
   if (isProcessing.value || !currentCard.value) return;
 
   const card = currentCard.value;
@@ -332,6 +411,7 @@ function advanceIndex(step = 1) {
 }
 
 function advanceCard(step) {
+  dismissSwipeTutorial();
   if (isProcessing.value || !currentCard.value) return;
   isProcessing.value = true;
   advanceIndex(step);
@@ -356,6 +436,9 @@ function handleKeydown(event) {
 }
 
 function startDrag(event) {
+  if (showSwipeTutorial.value) {
+    dismissSwipeTutorial();
+  }
   if (!event.isPrimary || isProcessing.value || !currentCard.value) return;
   isDragging.value = true;
   startPointer.x = event.clientX;
@@ -403,15 +486,21 @@ function onPointerLeave(event) {
 
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
+  loadSwipeTutorialPreference();
   loadDeck();
 });
+watch(
+  () => authStore.user?.uid,
+  () => {
+    loadSwipeTutorialPreference();
+  }
+);
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", handleKeydown);
   if (toastTimer) clearTimeout(toastTimer);
 });
 </script>
-
 <style scoped>
 .match-screen {
   flex: 1;
@@ -526,6 +615,83 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.swipe-tutorial {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(
+    circle at center,
+    rgba(15, 17, 27, 0.78),
+    rgba(5, 6, 8, 0.82)
+  );
+  backdrop-filter: blur(8px);
+  z-index: 4;
+  padding: clamp(1.4rem, 4vw, 2.2rem);
+}
+
+.swipe-tutorial__content {
+  max-width: 320px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  text-align: center;
+  padding: clamp(1.2rem, 3.2vw, 1.8rem);
+  border-radius: 20px;
+  background: rgba(15, 19, 28, 0.92);
+  border: 1px solid rgba(148, 163, 184, 0.28);
+  box-shadow: 0 24px 48px rgba(5, 6, 8, 0.55);
+}
+
+.swipe-tutorial__title {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.swipe-tutorial__body {
+  margin: 0;
+  font-size: 0.95rem;
+  color: rgba(226, 232, 240, 0.88);
+  line-height: 1.6;
+}
+
+.swipe-tutorial__actions {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+}
+
+.swipe-tutorial__dismiss {
+  border: none;
+  border-radius: 999px;
+  padding: 0.6rem 1.6rem;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f1729;
+  background: linear-gradient(135deg, #fde68a, #facc15);
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.swipe-tutorial__dismiss:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(250, 204, 21, 0.35);
+}
+
+.swipe-tutorial-enter-active,
+.swipe-tutorial-leave-active {
+  transition: opacity 0.24s ease;
+}
+
+.swipe-tutorial-enter-from,
+.swipe-tutorial-leave-to {
+  opacity: 0;
+}
 @keyframes match-card-hint-wiggle {
   0%,
   100% {
