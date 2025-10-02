@@ -31,7 +31,6 @@
 
             <div class="match-card__details">
               <div class="match-card__copy">
-                <p class="match-card__subtitle">{{ currentCard.persona }}</p>
                 <h3 class="match-card__name">{{ currentCard.name }}</h3>
                 <p class="match-card__bio">{{ currentCard.bio }}</p>
               </div>
@@ -66,11 +65,7 @@
           </div>
         </article>
 
-        <div
-          v-else-if="hasAttemptedLoad"
-          key="empty"
-          class="empty-state"
-        >
+        <div v-else-if="hasAttemptedLoad" key="empty" class="empty-state">
           <h3>還沒有可以配對的角色</h3>
           <p>調整條件或建立新的 AI 夥伴讓我們重新為你配對。</p>
           <button class="ghost" @click="resetDeck" :disabled="isLoadingDeck">
@@ -486,12 +481,6 @@ onBeforeUnmount(() => {
   color: #fff;
 }
 
-.match-card__subtitle {
-  margin: 0;
-  font-size: 0.85rem;
-  letter-spacing: 0.18em;
-}
-
 .match-card__name {
   margin: 0;
   font-size: clamp(1.7rem, 5.5vw, 2.3rem);
@@ -640,9 +629,3 @@ onBeforeUnmount(() => {
   }
 }
 </style>
-
-
-
-
-
-

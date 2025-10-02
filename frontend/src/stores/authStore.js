@@ -56,6 +56,15 @@ function buildSessionRequestBody() {
   return payload;
 }
 
+function sanitizeSessionResponse(session) {
+  if (!session || typeof session !== 'object') {
+    return null;
+  }
+
+  const { persona, ...rest } = session;
+  return Object.keys(rest).length ? rest : null;
+}
+
 export const useAuthStore = defineStore('auth', {
   state: () => ({
     user: null,
@@ -155,11 +164,16 @@ export const useAuthStore = defineStore('auth', {
       const pending = apiRequest('/auth/session', requestOptions)
         .then((response) => {
           const { profile, session } = response?.data ?? {};
-          this.profile = profile ?? null;
-          this.session = session ?? null;
+          const sanitizedSession = sanitizeSessionResponse(session);
+          const normalizedProfile = profile ?? null;
+          this.profile = normalizedProfile;
+          this.session = sanitizedSession;
           this.lastSessionSync = Date.now();
           this.error = null;
-          return response?.data ?? null;
+          return {
+            profile: normalizedProfile,
+            session: sanitizedSession,
+          };
         })
         .catch((err) => {
           this.error = err;
@@ -208,6 +222,8 @@ export const useAuthStore = defineStore('auth', {
     },
   },
 });
+
+
 
 
 

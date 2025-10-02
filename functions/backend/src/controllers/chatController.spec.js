@@ -117,6 +117,7 @@ describe('chatController', () => {
       bio: 'Listens with patience and warmth.',
       tags: ['溫柔'],
       image: 'https://example.com/luna.png',
+      sampleMessages: ['最近還好嗎？'],
       card: {
         id: 'role-1',
         name: 'Luna',

@@ -208,6 +208,7 @@ export async function upsertUserProfile(uid, profileData) {
     uid,
     updatedAt: now,
     lastLoginAt: now,
+    persona: FieldValue.delete(),
   };
 
   const normalizedMembership = normalizeMembershipRecord(payload.membership);
@@ -252,6 +253,11 @@ function sanitizeProfileUpdate(updates = {}) {
   const sanitized = {};
   let hasChanges = false;
   let avatarChanged = false;
+
+  if ('persona' in updates) {
+    sanitized.persona = FieldValue.delete();
+    hasChanges = true;
+  }
 
   const assignTrimmableField = (key, maxLength) => {
     if (!(key in updates)) {
@@ -472,6 +478,8 @@ export async function recordLoginEvent(uid, event = {}) {
   await docRef.set(sanitizedEvent, { merge: false });
   return docRef.id;
 }
+
+
 
 
 
