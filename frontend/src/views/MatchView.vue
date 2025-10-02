@@ -22,7 +22,7 @@
           @pointerleave="onPointerLeave"
         >
           <div class="match-card__surface">
-            <div v-if="!showSwipeTutorial" class="match-card__swipe-hints">
+            <div v-if="!showSwipeTutorial && showSwipeHints" class="match-card__swipe-hints">
               <div class="match-card__hint match-card__hint--left">
                 <span class="match-card__hint-icon">←</span>
                 <span class="match-card__hint-label">左滑略過</span>
@@ -131,7 +131,9 @@ const router = useRouter();
 const chatStore = useChatStore();
 const authStore = useAuthStore();
 const GLOBAL_TUTORIAL_KEY = "match_swipe_tutorial_seen";
+const GLOBAL_HINTS_KEY = "match_swipe_hints_seen";
 const showSwipeTutorial = ref(false);
+const showSwipeHints = ref(false);
 
 const cards = ref([]);
 const currentIndex = ref(0);
@@ -160,6 +162,10 @@ function getTutorialStorageKey() {
   const uid = authStore.user?.uid;
   return uid ? `${GLOBAL_TUTORIAL_KEY}_${uid}` : GLOBAL_TUTORIAL_KEY;
 }
+function getHintsStorageKey() {
+  const uid = authStore.user?.uid;
+  return uid ? `${GLOBAL_HINTS_KEY}_${uid}` : GLOBAL_HINTS_KEY;
+}
 
 function loadSwipeTutorialPreference() {
   if (typeof window === "undefined") {
@@ -185,6 +191,30 @@ function loadSwipeTutorialPreference() {
   }
 }
 
+function loadSwipeHintsPreference() {
+  if (typeof window === "undefined") {
+    showSwipeHints.value = false;
+    return;
+  }
+
+  try {
+    const globalSeen = window.localStorage.getItem(GLOBAL_HINTS_KEY);
+    const userKey = getHintsStorageKey();
+    const userSeen = window.localStorage.getItem(userKey);
+
+    if (userSeen || globalSeen) {
+      if (!userSeen && globalSeen && userKey !== GLOBAL_HINTS_KEY) {
+        window.localStorage.setItem(userKey, globalSeen);
+      }
+      showSwipeHints.value = false;
+    } else {
+      showSwipeHints.value = true;
+    }
+  } catch (error) {
+    showSwipeHints.value = false;
+  }
+}
+
 function dismissSwipeTutorial({ persist = true } = {}) {
   if (!showSwipeTutorial.value) {
     return;
@@ -199,6 +229,26 @@ function dismissSwipeTutorial({ persist = true } = {}) {
   try {
     const key = getTutorialStorageKey();
     window.localStorage.setItem(GLOBAL_TUTORIAL_KEY, "1");
+    window.localStorage.setItem(key, "1");
+  } catch (error) {
+    // ignore storage failures
+  }
+}
+
+function markSwipeHintsSeen() {
+  if (!showSwipeHints.value) {
+    return;
+  }
+
+  showSwipeHints.value = false;
+
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  try {
+    const key = getHintsStorageKey();
+    window.localStorage.setItem(GLOBAL_HINTS_KEY, "1");
     window.localStorage.setItem(key, "1");
   } catch (error) {
     // ignore storage failures
@@ -440,6 +490,9 @@ function startDrag(event) {
     dismissSwipeTutorial();
   }
   if (!event.isPrimary || isProcessing.value || !currentCard.value) return;
+  if (showSwipeHints.value) {
+    markSwipeHintsSeen();
+  }
   isDragging.value = true;
   startPointer.x = event.clientX;
   startPointer.y = event.clientY;
@@ -487,12 +540,14 @@ function onPointerLeave(event) {
 onMounted(() => {
   window.addEventListener("keydown", handleKeydown);
   loadSwipeTutorialPreference();
+  loadSwipeHintsPreference();
   loadDeck();
 });
 watch(
   () => authStore.user?.uid,
   () => {
     loadSwipeTutorialPreference();
+    loadSwipeHintsPreference();
   }
 );
 

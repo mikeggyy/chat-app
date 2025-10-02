@@ -13,9 +13,11 @@ import {
   DEFAULT_MEMBERSHIP_TIER,
 } from '../utils/membership.js';
 
-const SYSTEM_PROMPT = 'You are an empathetic AI companion that follows safety guardrails and keeps the conversation supportive.';
+const SYSTEM_PROMPT = 'You are an empathetic AI companion that follows safety guardrails and replies in Traditional Chinese. Always begin every response with三個 tokens：[[scene:場景]] [[tone:語氣]] [[action:行為]]，括號內請填 2-8 個字並緊貼當前情境。緊接著輸出主要句子（不要再顯示括號或標籤），讓語氣、行為、地點自然融入語境並保持真誠溫柔。';
 const SUGGESTION_PROMPT =
-  '根據近期的對話內容，請提供 3 句使用者可以回覆 AI 的建議。保持真誠溫柔，每句限 25 個字以內。請以 JSON 陣列輸出，不要加入其他內容。';
+  '根據完整的對話內容（包含 AI 的開場白與近期訊息），請提供 3 句使用者可以回覆或主動拓展話題的建議。每個建議請依序先輸出 [[scene:場景]] [[tone:語氣]] [[action:行為]]（括號內 2-8 個字且互不重複），接著輸出主要句子，讓語氣、行為、地點自然融入語境並保持真誠溫柔，每句限 25 個字以內。僅以 JSON 陣列輸出，不要加入其他內容。';
+
+const SUGGESTION_MODEL = (process.env.OPENAI_SUGGESTION_MODEL || '').trim() || 'gpt-4.1-mini';
 
 function conversationCollection(uid) {
   return firestore.collection('users').doc(uid).collection('conversations');
@@ -432,6 +434,39 @@ async function fetchMessages(uid, conversationId, limit = 40) {
   }));
 }
 
+function ensureAssistantContext(history = [], conversation) {
+  const normalizedHistory = Array.isArray(history) ? [...history] : [];
+  const hasAssistantMessage = normalizedHistory.some((entry) =>
+    entry && entry.sender === 'ai' && typeof entry.message === 'string' && entry.message.trim()
+  );
+
+  if (hasAssistantMessage) {
+    return normalizedHistory;
+  }
+
+  const fallbackMessages = mergeSampleMessages(
+    conversation?.sampleMessages,
+    conversation?.card?.sampleMessages,
+    conversation?.card?.greeting,
+    conversation?.greeting
+  );
+
+  const fallback = fallbackMessages.find((entry) => typeof entry === 'string' && entry.trim());
+  if (!fallback) {
+    return normalizedHistory;
+  }
+
+  normalizedHistory.unshift({
+    id: 'synthetic-assistant-intro',
+    sender: 'ai',
+    message: fallback,
+    createdAt: conversation?.createdAt ?? Date.now(),
+    synthetic: true,
+  });
+
+  return normalizedHistory;
+}
+
 function buildPromptFromHistory(history) {
   const messages = [{ role: 'system', content: SYSTEM_PROMPT }];
 
@@ -444,6 +479,272 @@ function buildPromptFromHistory(history) {
   return messages;
 }
 
+function extractSuggestionText(entry, depth = 0) {
+  if (!entry || depth > 6) {
+    return '';
+  }
+
+  if (typeof entry === 'string') {
+    return entry;
+  }
+
+  if (Array.isArray(entry)) {
+    for (const item of entry) {
+      const extracted = extractSuggestionText(item, depth + 1);
+      if (extracted) {
+        return extracted;
+      }
+    }
+    return '';
+  }
+
+  if (typeof entry !== 'object') {
+    return '';
+  }
+
+  const directKeys = ['text', 'value', 'message', 'content', 'suggestion', 'output'];
+
+  for (const key of directKeys) {
+    if (!(key in entry)) {
+      continue;
+    }
+    const value = entry[key];
+    if (typeof value === 'string') {
+      return value;
+    }
+    if (value && typeof value === 'object') {
+      const extracted = extractSuggestionText(value, depth + 1);
+      if (extracted) {
+        return extracted;
+      }
+    }
+  }
+
+  for (const value of Object.values(entry)) {
+    const extracted = extractSuggestionText(value, depth + 1);
+    if (extracted) {
+      return extracted;
+    }
+  }
+
+  return '';
+}
+
+function sanitizeSuggestionList(list, { max = 3 } = {}) {
+  if (!Array.isArray(list)) {
+    return [];
+  }
+
+  const maxCount = typeof max === 'number' && max > 0 ? max : 3;
+  const seen = new Set();
+  const normalized = [];
+
+  for (const entry of list) {
+    const queue = Array.isArray(entry) ? entry : [entry];
+
+    for (const candidate of queue) {
+      const extracted = extractSuggestionText(candidate);
+      if (!extracted || typeof extracted !== 'string') {
+        continue;
+      }
+
+      let textValue = extracted.trim();
+      if (!textValue) {
+        continue;
+      }
+
+      textValue = textValue
+        .replace(/^["']+/, '')
+        .replace(/["']+$/, '')
+        .trim();
+
+      if (!textValue) {
+        continue;
+      }
+
+      const key = textValue.toLowerCase();
+      if (seen.has(key)) {
+        continue;
+      }
+
+      seen.add(key);
+      normalized.push(textValue);
+
+      if (normalized.length === maxCount) {
+        break;
+      }
+    }
+
+    if (normalized.length === maxCount) {
+      break;
+    }
+  }
+
+  return normalized;
+}
+
+const FALLBACK_SUGGESTION_TOKEN_PRESETS = {
+  music: [
+    { scene: '[[scene:月光舞台]]', tone: '[[tone:俏皮眨眼]]', action: '[[action:遞上耳機]]' },
+    { scene: '[[scene:屋頂派對]]', tone: '[[tone:柔和點頭]]', action: '[[action:陪你搖擺]]' },
+    { scene: '[[scene:DJ台前]]', tone: '[[tone:熱情大笑]]', action: '[[action:牽起你的手]]' },
+  ],
+  comfort: [
+    { scene: '[[scene:窗邊沙發]]', tone: '[[tone:柔和細語]]', action: '[[action:遞上熱茶]]' },
+    { scene: '[[scene:靜謐夜色]]', tone: '[[tone:溫柔相伴]]', action: '[[action:輕握你的手]]' },
+    { scene: '[[scene:柔軟毯子下]]', tone: '[[tone:低聲安慰]]', action: '[[action:陪你呼吸]]' },
+  ],
+  adventure: [
+    { scene: '[[scene:星圖桌前]]', tone: '[[tone:自信微笑]]', action: '[[action:指向航線]]' },
+    { scene: '[[scene:夜空甲板]]', tone: '[[tone:爽朗笑聲]]', action: '[[action:攬你入懷]]' },
+    { scene: '[[scene:旅程地圖前]]', tone: '[[tone:鼓舞眼神]]', action: '[[action:牽你向前]]' },
+  ],
+  mentor: [
+    { scene: '[[scene:書房暖燈]]', tone: '[[tone:耐心微笑]]', action: '[[action:攤開筆記]]' },
+    { scene: '[[scene:靜謐書桌]]', tone: '[[tone:專注點頭]]', action: '[[action:推上茶杯]]' },
+    { scene: '[[scene:窗邊書架]]', tone: '[[tone:溫暖凝視]]', action: '[[action:陪你思考]]' },
+  ],
+  default: [
+    { scene: '[[scene:溫暖角落]]', tone: '[[tone:柔和微笑]]', action: '[[action:端上熱茶]]' },
+    { scene: '[[scene:夜色沙發]]', tone: '[[tone:細心傾聽]]', action: '[[action:握住你的手]]' },
+    { scene: '[[scene:靜夜窗邊]]', tone: '[[tone:溫柔陪伴]]', action: '[[action:一起呼吸]]' },
+  ],
+};
+
+const FALLBACK_SUGGESTION_SENTENCES = {
+  music(name) {
+    return [
+      `${name}想聽你今晚的節奏。`,
+      `想跟${name}討論下一首嗎？`,
+      `要不要和${name}續攤聊聊心情？`,
+    ];
+  },
+  comfort(name) {
+    return [
+      `想和${name}慢慢梳理剛才的情緒嗎？`,
+      `${name}在這裡，慢慢說就好。`,
+      `需要${name}陪你喘口氣嗎？`,
+    ];
+  },
+  adventure(name) {
+    return [
+      `想跟${name}計畫下一段旅程嗎？`,
+      `${name}準備好一起探索新路線。`,
+      `告訴${name}此刻最想追的星光？`,
+    ];
+  },
+  mentor(name) {
+    return [
+      `想請${name}幫忙梳理一下想法嗎？`,
+      `告訴${name}現在的疑問，我在聽。`,
+      `和${name}討論下一個目標好嗎？`,
+    ];
+  },
+  default(name) {
+    return [
+      `想跟${name}聊聊剛才的感覺嗎？`,
+      `${name}在這裡，慢慢說給我聽。`,
+      `要不要告訴${name}下一步計畫？`,
+    ];
+  },
+};
+
+function inferFallbackSuggestionCluster(conversation) {
+  const segments = [];
+
+  const collect = (value) => {
+    const normalized = normalizeString(value);
+    if (normalized) {
+      segments.push(normalized.toLowerCase());
+    }
+  };
+
+  collect(conversation?.aiPersona);
+  collect(conversation?.summary);
+  collect(conversation?.bio);
+  collect(conversation?.card?.persona);
+  collect(conversation?.card?.summary);
+
+  const tags = Array.isArray(conversation?.tags) ? conversation.tags : [];
+  const cardTags = Array.isArray(conversation?.card?.tags) ? conversation.card.tags : [];
+  for (const tag of [...tags, ...cardTags]) {
+    collect(tag);
+  }
+
+  const haystack = segments.join(' ');
+
+  if (/dj|音樂|派對|舞池|節奏|混音|樂迷|舞台|beat/.test(haystack)) {
+    return 'music';
+  }
+  if (/療癒|溫柔|陪伴|傾聽|治癒|安慰|守護|暖/.test(haystack)) {
+    return 'comfort';
+  }
+  if (/冒險|旅|星|宇宙|航|探|遠征/.test(haystack)) {
+    return 'adventure';
+  }
+  if (/老師|學習|導師|教練|顧問|研究|策略/.test(haystack)) {
+    return 'mentor';
+  }
+
+  return 'default';
+}
+
+function extractDisplayName(conversation) {
+  const candidates = [
+    normalizeString(conversation?.aiName),
+    normalizeString(conversation?.card?.name),
+    'AI夥伴',
+  ].filter(Boolean);
+
+  let raw = candidates[0];
+  const segments = raw.split(/[\s、,，·•・]+/).filter(Boolean);
+  if (segments.length > 1) {
+    raw = segments[segments.length - 1];
+  }
+
+  const trimmed = raw.trim();
+  if (trimmed.length <= 6) {
+    return trimmed;
+  }
+
+  return trimmed.slice(-6);
+}
+
+function buildFallbackSuggestions(conversation, desiredCount = 3) {
+  if (desiredCount <= 0) {
+    return [];
+  }
+
+  const cluster = inferFallbackSuggestionCluster(conversation);
+  const tokens = FALLBACK_SUGGESTION_TOKEN_PRESETS[cluster] ?? FALLBACK_SUGGESTION_TOKEN_PRESETS.default;
+  const name = extractDisplayName(conversation);
+  const sentenceBuilder = FALLBACK_SUGGESTION_SENTENCES[cluster] ?? FALLBACK_SUGGESTION_SENTENCES.default;
+  const sentences = sentenceBuilder(name);
+  const normalized = [];
+  const seen = new Set();
+
+  const tokenPool = tokens.length ? tokens : FALLBACK_SUGGESTION_TOKEN_PRESETS.default;
+  const sentencePool = sentences.length ? sentences : FALLBACK_SUGGESTION_SENTENCES.default(name);
+
+  let index = 0;
+  while (normalized.length < desiredCount && index < 12) {
+    const token = tokenPool[index % tokenPool.length];
+    const sentence = sentencePool[index % sentencePool.length];
+
+    if (token && sentence) {
+      const suggestion = `${token.scene} ${token.tone} ${token.action} ${sentence}`;
+      const key = suggestion.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        normalized.push(suggestion);
+      }
+    }
+
+    index += 1;
+  }
+
+  return normalized;
+}
 export async function listConversations(req, res, next) {
   try {
     const snapshot = await conversationCollection(req.user.uid)
@@ -777,7 +1078,8 @@ export async function sendMessage(req, res, next) {
     const userMessageRef = await messagesCollection.add(userMessageData);
 
     const history = await fetchMessages(req.user.uid, conversationId, 40);
-    const prompt = buildPromptFromHistory(history);
+    const historyWithContext = ensureAssistantContext(history, conversation);
+    const prompt = buildPromptFromHistory(historyWithContext);
 
     const response = await streamChatCompletion(prompt, {
       stream: false,
@@ -849,13 +1151,14 @@ export async function generateSuggestions(req, res, next) {
     });
 
     const history = await fetchMessages(req.user.uid, conversationId, 40);
-    const prompt = buildPromptFromHistory(history);
+    const historyWithContext = ensureAssistantContext(history, conversation);
+    const prompt = buildPromptFromHistory(historyWithContext);
     prompt.push({ role: 'user', content: SUGGESTION_PROMPT });
 
     const response = await streamChatCompletion(prompt, {
       stream: false,
       temperature: 0.9,
-      model: modelSelection.model,
+      model: SUGGESTION_MODEL,
       metadata: {
         source: 'chat.generateSuggestions',
         conversationId,
@@ -865,20 +1168,114 @@ export async function generateSuggestions(req, res, next) {
       },
     });
 
-    const text = response.output?.[0]?.content?.[0]?.text ?? '[]';
+    const rawContent = response.output?.[0]?.content?.[0] ?? null;
+    let textPayload = '';
+
+    if (rawContent) {
+      if (typeof rawContent.text === 'string') {
+        textPayload = rawContent.text;
+      } else if (rawContent.text) {
+        textPayload = extractSuggestionText(rawContent.text) || '';
+      }
+
+      if (!textPayload && typeof rawContent.value === 'string') {
+        textPayload = rawContent.value;
+      } else if (!textPayload && rawContent.value) {
+        textPayload = extractSuggestionText(rawContent.value) || '';
+      }
+
+      if (!textPayload && typeof rawContent.content === 'string') {
+        textPayload = rawContent.content;
+      } else if (!textPayload && rawContent.content) {
+        textPayload = extractSuggestionText(rawContent.content) || '';
+      }
+
+      if (!textPayload) {
+        textPayload = extractSuggestionText(rawContent) || '';
+      }
+    }
+
+    if (!textPayload && typeof response.output_text === 'string') {
+      textPayload = response.output_text;
+    }
+
+    const text = typeof textPayload === 'string' && textPayload.trim().length ? textPayload : '[]';
     let suggestions = [];
+    const extractSuggestionArray = (value) => {
+      if (Array.isArray(value)) {
+        return value;
+      }
+      if (value && typeof value === 'object') {
+        if (Array.isArray(value.suggestions)) {
+          return value.suggestions;
+        }
+      }
+      return null;
+    };
 
     try {
       const parsed = JSON.parse(text);
-      if (Array.isArray(parsed)) {
-        suggestions = parsed.filter((item) => typeof item === 'string' && item.trim());
+      const extracted = extractSuggestionArray(parsed);
+      if (Array.isArray(extracted)) {
+        suggestions = extracted;
       }
     } catch (parseError) {
-      suggestions = text
-        .split(/\r?\n/)
-        .map((line) => line.trim().replace(/^[-•E]\s*/, ''))
-        .filter((line) => line.length)
-        .slice(0, 3);
+      const withoutCodeFence = text
+        .replace(new RegExp('```[a-zA-Z]*\s*', 'g'), '')
+        .replace(/```/g, '')
+        .trim();
+
+      let extracted = null;
+      try {
+        const reparsed = JSON.parse(withoutCodeFence);
+        extracted = extractSuggestionArray(reparsed);
+      } catch (secondaryParseError) {
+        extracted = null;
+      }
+
+      if (Array.isArray(extracted)) {
+        suggestions = extracted;
+      } else {
+        const quotedMatches = Array.from(withoutCodeFence.matchAll(/"([^"\r\n]{1,200})"/g))
+          .map((match) => match[1].trim())
+          .filter((match) => match.length);
+
+        if (quotedMatches.length) {
+          suggestions = quotedMatches;
+        } else {
+          suggestions = withoutCodeFence
+            .split(/\r?\n/)
+            .map((line) => line.trim().replace(/^[-•E]\s*/, ''))
+            .map((line) => line.replace(/^[\s,]+/, '').replace(/[\s,]+$/, '').trim())
+            .map((line) => line.replace(/^["']+/, '').replace(/["']+$/, '').trim())
+            .filter((line) => line.length);
+        }
+      }
+    }
+
+    suggestions = sanitizeSuggestionList(suggestions, { max: 3 });
+
+    if (suggestions.length < 3) {
+      const fallbackCandidates = buildFallbackSuggestions(conversation, 3);
+      const seenKeys = new Set(suggestions.map((entry) => entry.toLowerCase()));
+      for (const candidate of fallbackCandidates) {
+        if (typeof candidate !== 'string') {
+          continue;
+        }
+        const trimmedCandidate = candidate.trim();
+        if (!trimmedCandidate) {
+          continue;
+        }
+        const key = trimmedCandidate.toLowerCase();
+        if (seenKeys.has(key)) {
+          continue;
+        }
+        seenKeys.add(key);
+        suggestions.push(trimmedCandidate);
+        if (suggestions.length === 3) {
+          break;
+        }
+      }
     }
 
     res.json({
@@ -890,5 +1287,14 @@ export async function generateSuggestions(req, res, next) {
     next(error);
   }
 }
+
+
+
+
+
+
+
+
+
 
 

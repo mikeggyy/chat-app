@@ -35,6 +35,7 @@ function isAllowedDevOrigin(origin) {
 
 app.use(
   helmet({
+    crossOriginOpenerPolicy: { policy: 'same-origin-allow-popups' },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
   })
 );
@@ -72,6 +73,7 @@ app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
+
 
 
 

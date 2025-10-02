@@ -75,7 +75,23 @@
               message.sender === 'user' ? 'message--user' : 'message--ai',
             ]"
           >
-            <p class="message__text">{{ message.text }}</p>
+            <p class="message__text">
+              <template
+                v-for="(segment, segmentIndex) in buildRichSegments(message.text)"
+                :key="`message-${message.id}-${segmentIndex}`"
+              >
+                <span
+                  :class="[
+                    'message__segment',
+                    segment.type === 'scene' ? 'message__scene' : '',
+                    segment.type === 'tone' ? 'message__tone' : '',
+                    segment.type === 'action' ? 'message__action' : ''
+                  ]"
+                >
+                  {{ segment.display }}
+                </span>
+              </template>
+            </p>
           </article>
         </TransitionGroup>
 
@@ -89,7 +105,7 @@
         </div>
       </div>
 
-      <div v-if="suggestions.length" class="chat-panel__suggestions">
+      <div v-if="suggestions.length" class="chat-panel__suggestions" ref="suggestionContainer">
         <button
           v-for="(suggestion, index) in suggestions"
           :key="`suggestion-${index}`"
@@ -97,7 +113,21 @@
           class="suggestion-chip"
           @click="applySuggestion(suggestion)"
         >
-          {{ suggestion }}
+          <template
+            v-for="(segment, segmentIndex) in buildRichSegments(suggestion)"
+            :key="`suggestion-${index}-${segmentIndex}`"
+          >
+            <span
+              :class="[
+                'suggestion-chip__segment',
+                segment.type === 'scene' ? 'suggestion-chip__scene' : '',
+                segment.type === 'tone' ? 'suggestion-chip__tone' : '',
+                segment.type === 'action' ? 'suggestion-chip__action' : ''
+              ]"
+            >
+              {{ segment.display }}
+            </span>
+          </template>
         </button>
       </div>
 
@@ -106,6 +136,7 @@
       <form class="chat-panel__composer" @submit.prevent="handleSend">
         <div class="chat-panel__input-wrapper">
           <button
+            ref="suggestionButton"
             class="chat-panel__suggestion-button"
             type="button"
             aria-label="產生建議回覆"
@@ -242,8 +273,12 @@ const generatingSuggestions = ref(false);
 const error = ref("");
 const draft = ref("");
 const suggestions = ref([]);
+const lastSuggestionKey = ref(null);
+const cachedSuggestions = ref([]);
 const messageList = ref(null);
 const showClearConfirm = ref(false);
+const suggestionContainer = ref(null);
+const suggestionButton = ref(null);
 const isListening = ref(false);
 const voiceSupported = ref(true);
 let recognition = null;
@@ -269,6 +304,96 @@ function normalizeSampleMessages(input) {
   return [];
 }
 
+const RICH_TOKEN_REGEX = /\[\[(scene|tone|action):([^\]]+)\]\]/gi;
+
+function extractRichMetadata(raw) {
+  if (typeof raw !== 'string') {
+    return {
+      scene: null,
+      tone: null,
+      action: null,
+      text: raw == null ? '' : String(raw)
+    };
+  }
+
+  const tokens = { scene: null, tone: null, action: null };
+  let remainder = raw;
+  remainder = remainder.replace(RICH_TOKEN_REGEX, (match, key, value) => {
+    const normalizedKey = String(key).trim().toLowerCase();
+    if (normalizedKey === 'scene' || normalizedKey === 'tone' || normalizedKey === 'action') {
+      tokens[normalizedKey] = value.trim();
+    }
+    return '';
+  });
+
+  return {
+    scene: tokens.scene,
+    tone: tokens.tone,
+    action: tokens.action,
+    text: remainder.trim()
+  };
+}
+
+function buildRichSegments(raw) {
+  const metadata = extractRichMetadata(raw);
+  const segments = [];
+
+  if (metadata.scene) {
+    segments.push({ type: 'scene', value: metadata.scene, display: '在' + metadata.scene });
+  }
+
+  if (metadata.tone) {
+    segments.push({ type: 'tone', value: metadata.tone, display: '(' + metadata.tone + ')' });
+  }
+
+  if (metadata.text) {
+    segments.push({ type: 'text', value: metadata.text, display: metadata.text });
+  }
+
+  if (metadata.action) {
+    const prefix = segments.length ? '，' : '';
+    segments.push({ type: 'action', value: metadata.action, display: prefix + metadata.action });
+  }
+
+  if (!segments.length) {
+    const fallback = typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
+    segments.push({ type: 'text', value: fallback, display: fallback });
+  }
+
+  return segments;
+}
+
+function formatRichMessageForDraft(raw) {
+  const metadata = extractRichMetadata(raw);
+  let result = '';
+
+  if (metadata.scene) {
+    result += '在' + metadata.scene;
+    if (metadata.tone) {
+      result += '(' + metadata.tone + ')';
+    }
+  } else if (metadata.tone) {
+    result += '(' + metadata.tone + ')';
+  }
+
+  if (metadata.text) {
+    if (!result || metadata.text.startsWith('，')) {
+      result += metadata.text;
+    } else {
+      result += metadata.text;
+    }
+  }
+
+  if (metadata.action) {
+    result += result ? '，' + metadata.action : metadata.action;
+  }
+
+  if (!result) {
+    return typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
+  }
+
+  return result;
+}
 const sampleMessageText = computed(() => {
   const sources = [
     props.conversation?.card?.sampleMessages,
@@ -278,10 +403,12 @@ const sampleMessageText = computed(() => {
 
   for (const source of sources) {
     const [first] = normalizeSampleMessages(source);
-    if (first) return first;
+    if (first) {
+      return formatRichMessageForDraft(first);
+    }
   }
 
-  return "";
+  return '';
 });
 
 function createSampleMessage() {
@@ -329,6 +456,20 @@ const panelStyle = computed(() => ({
     ? `url(${cardInfo.value.image})`
     : "none",
 }));
+
+const latestAiMessageKey = computed(() => {
+  const list = messages.value;
+  for (let i = list.length - 1; i >= 0; i -= 1) {
+    const entry = list[i];
+    if (entry?.sender === "ai") {
+      const idPart = entry.id ? String(entry.id) : `index-${i}`;
+      const text = typeof entry.text === "string" ? entry.text.trim() : "";
+      const hash = text ? `${text.length.toString(36)}:${text.slice(-12)}` : "empty";
+      return `${props.conversationId}:${idPart}:${hash}`;
+    }
+  }
+  return null;
+});
 
 const clearConfirmMessage = computed(() => {
   const name = cardInfo.value.name?.trim();
@@ -391,6 +532,8 @@ async function handleSend() {
   if (!text || !canSend.value) return;
 
   sending.value = true;
+  cachedSuggestions.value = [];
+  lastSuggestionKey.value = null;
   suggestions.value = [];
   error.value = "";
 
@@ -455,6 +598,8 @@ async function confirmClear() {
     });
     messages.value = injectSampleMessage([]);
     suggestions.value = [];
+    lastSuggestionKey.value = null;
+    cachedSuggestions.value = [];
   } catch (err) {
     error.value = err instanceof Error ? err.message : "清除聊天紀錄失敗";
   } finally {
@@ -467,11 +612,41 @@ function cancelClear() {
 }
 
 function applySuggestion(suggestion) {
-  draft.value = suggestion;
+  const formatted = formatRichMessageForDraft(suggestion);
+  const text = typeof formatted === 'string' ? formatted.trim() : '';
+  if (!text || sending.value || loading.value) {
+    return;
+  }
+  draft.value = text;
+  handleSend();
 }
 
-async function generateSuggestions() {
-  if (generatingSuggestions.value || loading.value) return;
+
+async function generateSuggestions(options) {
+  const isEvent =
+    options && typeof options === "object" && typeof options.preventDefault === "function";
+  if (isEvent) {
+    options.preventDefault();
+  }
+
+  const force =
+    typeof options === "boolean"
+      ? options
+      : isEvent
+      ? true
+      : options && typeof options === "object" && options.force === true;
+
+  if (generatingSuggestions.value || sending.value) {
+    return;
+  }
+
+  const anchor = latestAiMessageKey.value;
+  if (!force && anchor && lastSuggestionKey.value === anchor) {
+    if (!suggestions.value.length && cachedSuggestions.value.length) {
+      suggestions.value = [...cachedSuggestions.value];
+    }
+    return;
+  }
 
   generatingSuggestions.value = true;
   error.value = "";
@@ -484,14 +659,47 @@ async function generateSuggestions() {
       }
     );
     const data = response?.data?.suggestions ?? [];
-    suggestions.value = data.filter(
-      (item) => typeof item === "string" && item.trim()
-    );
+    const normalized = data
+      .filter((item) => typeof item === "string" && item.trim())
+      .map((item) => item.trim())
+      .slice(0, 3);
+    suggestions.value = normalized;
+    cachedSuggestions.value = normalized;
+    if (anchor) {
+      lastSuggestionKey.value = anchor;
+    }
   } catch (err) {
     error.value = err instanceof Error ? err.message : "產生建議回覆失敗";
   } finally {
     generatingSuggestions.value = false;
   }
+}
+
+function handleOutsideSuggestionClick(event) {
+  if (!suggestions.value.length) {
+    return;
+  }
+
+  const target = event?.target;
+  if (!target) {
+    return;
+  }
+
+  if (typeof Node !== "undefined" && !(target instanceof Node)) {
+    return;
+  }
+
+  const container = suggestionContainer.value;
+  if (container && typeof container.contains === "function" && container.contains(target)) {
+    return;
+  }
+
+  const trigger = suggestionButton.value;
+  if (trigger && typeof trigger.contains === "function" && trigger.contains(target)) {
+    return;
+  }
+
+  suggestions.value = [];
 }
 
 function handleComposerKeydown(event) {
@@ -578,6 +786,8 @@ watch(sampleMessageText, () => {
 watch(
   () => props.conversationId,
   async () => {
+    lastSuggestionKey.value = null;
+    cachedSuggestions.value = [];
     suggestions.value = [];
     await loadMessages();
   },
@@ -586,10 +796,16 @@ watch(
 
 onMounted(() => {
   setupSpeechRecognition();
+  if (typeof window !== "undefined") {
+    window.addEventListener('click', handleOutsideSuggestionClick);
+  }
 });
 
 onBeforeUnmount(() => {
   destroySpeechRecognition();
+  if (typeof window !== "undefined") {
+    window.removeEventListener('click', handleOutsideSuggestionClick);
+  }
 });
 </script>
 
@@ -945,4 +1161,50 @@ onBeforeUnmount(() => {
     padding: 0.35rem 0.6rem;
   }
 }
+
+.message__segment {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.25rem;
+}
+
+.message__scene {
+  font-weight: 600;
+  margin-right: 0.2rem;
+}
+
+.message__tone {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.75);
+  margin-right: 0.25rem;
+}
+
+.message__action {
+  font-size: 0.78rem;
+  color: rgba(226, 232, 240, 0.7);
+}
+
+.suggestion-chip__segment {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.8rem;
+  margin-right: 0.2rem;
+}
+
+.suggestion-chip__scene {
+  font-weight: 600;
+}
+
+.suggestion-chip__tone {
+  font-size: 0.74rem;
+  color: rgba(59, 130, 246, 0.85);
+}
+
+.suggestion-chip__action {
+  font-size: 0.74rem;
+  color: rgba(96, 165, 250, 0.85);
+}
+
 </style>
+
+
