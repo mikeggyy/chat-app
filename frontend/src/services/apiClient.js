@@ -4,9 +4,29 @@ const DEFAULT_LOCAL_BASE_URL = "http://localhost:7000/api";
 const DEFAULT_PROD_BASE_URL =
   "https://us-central1-test-chat-app-888.cloudfunctions.net/api";
 
+function detectNetworkBaseUrl() {
+  if (!import.meta.env.DEV || typeof window === "undefined") {
+    return null;
+  }
+
+  const hostname = window.location.hostname;
+  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+    return null;
+  }
+
+  const protocol = window.location.protocol || "http:";
+  const port = (import.meta.env.VITE_BACKEND_PORT ?? "7000").toString().trim();
+  const formattedHost = hostname.includes(":") ? `[${hostname}]` : hostname;
+
+  return port ? `${protocol}//${formattedHost}:${port}` : `${protocol}//${formattedHost}`;
+}
+
+const runtimeDetectedBaseUrl = detectNetworkBaseUrl();
+
 const resolvedBaseUrl =
   import.meta.env.VITE_BACKEND_API_URL ??
   import.meta.env.VITE_API_BASE_URL ??
+  runtimeDetectedBaseUrl ??
   (import.meta.env.DEV ? DEFAULT_LOCAL_BASE_URL : DEFAULT_PROD_BASE_URL);
 
 const API_BASE_URL = normalizeBaseUrl(sanitizeBaseUrl(resolvedBaseUrl));

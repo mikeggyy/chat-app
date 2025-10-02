@@ -71,14 +71,14 @@
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import {
   fetchMatchDeck,
   favoriteMatchCard,
   unfavoriteMatchCard,
-} from '../services/matchService';
-import { useChatStore } from '../stores/chatStore';
+} from "../services/matchService";
+import { useChatStore } from "../stores/chatStore";
 
 const router = useRouter();
 const chatStore = useChatStore();
@@ -99,10 +99,10 @@ const swipeThreshold = 120;
 
 const currentCard = computed(() => cards.value[currentIndex.value] ?? null);
 const currentCardKey = computed(() =>
-  currentCard.value ? `${currentCard.value.id}-${currentIndex.value}` : 'empty'
+  currentCard.value ? `${currentCard.value.id}-${currentIndex.value}` : "empty"
 );
 const favoriteButtonLabel = computed(() =>
-  currentCard.value?.isFavorite ? '取消收藏' : '收藏'
+  currentCard.value?.isFavorite ? "取消收藏" : "收藏"
 );
 
 const cardStyle = computed(() => {
@@ -113,8 +113,8 @@ const cardStyle = computed(() => {
     transform: `${translate} ${rotate}`,
     opacity: Math.max(opacity, 0.65),
     transition: isDragging.value
-      ? 'none'
-      : 'transform 0.25s ease, opacity 0.25s ease',
+      ? "none"
+      : "transform 0.25s ease, opacity 0.25s ease",
   };
 });
 
@@ -123,25 +123,23 @@ function normalizeMatchCard(card) {
 
   const tags = Array.isArray(card.tags) ? card.tags : [];
   const metrics =
-    typeof card.metrics === 'object' && card.metrics !== null ? card.metrics : {};
+    typeof card.metrics === "object" && card.metrics !== null
+      ? card.metrics
+      : {};
 
   const sampleMessages = Array.isArray(card.sampleMessages)
     ? card.sampleMessages
-        .map((message) => (typeof message === 'string' ? message.trim() : ''))
+        .map((message) => (typeof message === "string" ? message.trim() : ""))
         .filter(Boolean)
     : [];
 
   return {
     id: card.id,
-    name: card.name ?? '',
-    persona: card.persona ?? '',
-    bio: card.summary ?? card.persona ?? card.bio ?? '',
+    name: card.name ?? "",
+    persona: card.persona ?? "",
+    bio: card.summary ?? card.persona ?? card.bio ?? "",
     tags,
-    image:
-      card.portraitImageUrl ??
-      card.coverImageUrl ??
-      card.image ??
-      '',
+    image: card.portraitImageUrl ?? card.coverImageUrl ?? card.image ?? "",
     sampleMessages,
     metrics,
     isFavorite: Boolean(card.isFavorite),
@@ -176,10 +174,10 @@ async function loadDeck({ resetIndex = true } = {}) {
 
     lastAction.value = null;
   } catch (error) {
-    console.error('[match] failed to load deck', error);
+    console.error("[match] failed to load deck", error);
     cards.value = [];
     favorites.value = [];
-    setLastAction('error', { message: error.message ?? '無法載入配對列表' });
+    setLastAction("error", { message: error.message ?? "無法載入配對列表" });
   } finally {
     isLoadingDeck.value = false;
   }
@@ -221,7 +219,7 @@ async function handleFavoriteToggle() {
         };
       }
 
-      setLastAction('unfavorite', { name: cardName });
+      setLastAction("unfavorite", { name: cardName });
     } else {
       const response = await favoriteMatchCard(cardId);
       const favoriteRecord = response?.data;
@@ -231,7 +229,9 @@ async function handleFavoriteToggle() {
         favorites.value = [...favorites.value, favoriteId];
       }
 
-      const updatedCard = response?.card ? normalizeMatchCard(response.card) : null;
+      const updatedCard = response?.card
+        ? normalizeMatchCard(response.card)
+        : null;
 
       if (cards.value[activeIndex]?.id === cardId) {
         cards.value[activeIndex] = {
@@ -241,11 +241,13 @@ async function handleFavoriteToggle() {
         };
       }
 
-      setLastAction('favorite', { name: cardName });
+      setLastAction("favorite", { name: cardName });
     }
   } catch (error) {
-    console.error('[match] toggle favorite failed', error);
-    setLastAction('error', { message: error.message ?? '收藏狀態更新失敗，請稍後再試' });
+    console.error("[match] toggle favorite failed", error);
+    setLastAction("error", {
+      message: error.message ?? "收藏狀態更新失敗，請稍後再試",
+    });
   } finally {
     isProcessing.value = false;
   }
@@ -259,23 +261,23 @@ async function handleEnterChat() {
 
   const sampleMessages = Array.isArray(card.sampleMessages)
     ? card.sampleMessages
-        .map((message) => (typeof message === 'string' ? message.trim() : ''))
+        .map((message) => (typeof message === "string" ? message.trim() : ""))
         .filter(Boolean)
     : [];
 
   const metadata = {
-    aiName: card.name ?? 'AI 夥伴',
-    aiPersona: card.persona ?? '',
-    bio: card.bio ?? card.persona ?? '',
+    aiName: card.name ?? "AI 夥伴",
+    aiPersona: card.persona ?? "",
+    bio: card.bio ?? card.persona ?? "",
     tags: Array.isArray(card.tags) ? card.tags : [],
     image: card.image || null,
     sampleMessages,
     isFavorite: Boolean(card.isFavorite),
     card: {
       id: card.id,
-      name: card.name ?? 'AI 夥伴',
-      persona: card.persona ?? '',
-      summary: card.bio ?? card.persona ?? '',
+      name: card.name ?? "AI 夥伴",
+      persona: card.persona ?? "",
+      summary: card.bio ?? card.persona ?? "",
       tags: Array.isArray(card.tags) ? card.tags : [],
       portraitImageUrl: card.image || null,
       coverImageUrl: card.image || null,
@@ -288,12 +290,12 @@ async function handleEnterChat() {
     chatStore.selectConversation(card.id);
 
     await router
-      .push({ name: 'chatDetail', params: { conversationId: card.id } })
+      .push({ name: "chatDetail", params: { conversationId: card.id } })
       .catch(() => {});
   } catch (error) {
-    console.error('[match] failed to ensure conversation', error);
-    setLastAction('error', {
-      message: error?.message ?? '無法開啟對話，請稍後再試',
+    console.error("[match] failed to ensure conversation", error);
+    setLastAction("error", {
+      message: error?.message ?? "無法開啟對話，請稍後再試",
     });
   } finally {
     isProcessing.value = false;
@@ -310,7 +312,7 @@ function advanceCard(step) {
   if (isProcessing.value || !currentCard.value) return;
   isProcessing.value = true;
   advanceIndex(step);
-  setLastAction(step > 0 ? 'advance-next' : 'advance-prev');
+  setLastAction(step > 0 ? "advance-next" : "advance-prev");
   setTimeout(() => {
     isProcessing.value = false;
   }, 160);
@@ -323,9 +325,9 @@ async function resetDeck() {
 
 function handleKeydown(event) {
   if (isProcessing.value) return;
-  if (event.key === 'ArrowLeft') {
+  if (event.key === "ArrowLeft") {
     advanceCard(-1);
-  } else if (event.key === 'ArrowRight') {
+  } else if (event.key === "ArrowRight") {
     advanceCard(1);
   }
 }
@@ -377,12 +379,12 @@ function onPointerLeave(event) {
 }
 
 onMounted(() => {
-  window.addEventListener('keydown', handleKeydown);
+  window.addEventListener("keydown", handleKeydown);
   loadDeck();
 });
 
 onBeforeUnmount(() => {
-  window.removeEventListener('keydown', handleKeydown);
+  window.removeEventListener("keydown", handleKeydown);
   if (toastTimer) clearTimeout(toastTimer);
 });
 </script>
@@ -402,7 +404,7 @@ onBeforeUnmount(() => {
   flex: 1;
   min-height: 0;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: center;
   position: relative;
   padding: 0;
@@ -597,6 +599,7 @@ onBeforeUnmount(() => {
 
   .match-card__surface {
     height: 91vh;
+    height: min(91vh, 91dvh);
   }
 }
 </style>

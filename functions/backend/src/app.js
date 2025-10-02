@@ -11,7 +11,27 @@ import router from './routes/index.js';
 loadEnv();
 
 const app = express();
-const origins = (process.env.FRONTEND_ORIGIN ?? '').split(',').map((origin) => origin.trim()).filter(Boolean);
+const origins = (process.env.FRONTEND_ORIGIN ?? '')
+  .split(',')
+  .map((origin) => origin.trim())
+  .filter(Boolean);
+
+const DEV_CLIENT_PORT = process.env.DEV_CLIENT_PORT ?? '5173';
+const devOriginPatterns = [
+  new RegExp(`^https?://localhost(?::${DEV_CLIENT_PORT})?$`, 'i'),
+  new RegExp(`^https?://127\\.0\\.0\\.1(?::${DEV_CLIENT_PORT})?$`, 'i'),
+  new RegExp(`^https?://\[::1\](?::${DEV_CLIENT_PORT})?$`, 'i'),
+  new RegExp(`^https?://\[[0-9a-f:]+\](?::${DEV_CLIENT_PORT})?$`, 'i'),
+  new RegExp(`^https?://(?:\\d{1,3}\\.){3}\\d{1,3}(?::${DEV_CLIENT_PORT})?$`, 'i'),
+];
+
+function isAllowedDevOrigin(origin) {
+  if (!origin || process.env.NODE_ENV === 'production') {
+    return false;
+  }
+
+  return devOriginPatterns.some((pattern) => pattern.test(origin));
+}
 
 app.use(
   helmet({
@@ -20,7 +40,21 @@ app.use(
 );
 app.use(
   cors({
-    origin: origins.length ? origins : true,
+    origin: (origin, callback) => {
+      if (!origin) {
+        return callback(null, true);
+      }
+
+      if (!origins.length || origins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      if (isAllowedDevOrigin(origin)) {
+        return callback(null, true);
+      }
+
+      return callback(new Error(`Not allowed by CORS: ${origin}`));
+    },
     credentials: true,
   })
 );
