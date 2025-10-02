@@ -1,0 +1,16 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'>
+  <defs>
+    <linearGradient id='tide-grad' x1='0%' x2='100%' y1='0%' y2='100%'>
+      <stop offset='0' stop-color='#75e0ff' />
+      <stop offset='0.55' stop-color='#547bff' />
+      <stop offset='1' stop-color='#2b35ff' />
+    </linearGradient>
+  </defs>
+  <rect width='120' height='120' rx='36' fill='url(#tide-grad)' />
+  <g fill='none' stroke='#e7f3ff' stroke-width='5' opacity='0.7'>
+    <path d='M28 70c10-8 20-12 32-12s22 4 32 12' stroke-linecap='round' />
+    <path d='M32 86c9-6 18-9 28-9s19 3 28 9' stroke-linecap='round' />
+  </g>
+  <circle cx='60' cy='48' r='22' fill='rgba(255,255,255,0.9)' />
+  <circle cx='68' cy='40' r='8' fill='rgba(116,196,255,0.6)' />
+</svg>

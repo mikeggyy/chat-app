@@ -1,0 +1,18 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'>
+  <defs>
+    <linearGradient id='bloom-gradient' x1='15%' x2='85%' y1='5%' y2='95%'>
+      <stop offset='0' stop-color='#ff9fde' />
+      <stop offset='0.5' stop-color='#956dff' />
+      <stop offset='1' stop-color='#3dd7ff' />
+    </linearGradient>
+    <radialGradient id='bloom-center' cx='50%' cy='40%' r='60%'>
+      <stop offset='0' stop-color='#fff7ff' stop-opacity='0.95' />
+      <stop offset='1' stop-color='#ffe0ff' stop-opacity='0' />
+    </radialGradient>
+  </defs>
+  <rect width='120' height='120' rx='36' fill='url(#bloom-gradient)' />
+  <circle cx='60' cy='60' r='44' fill='rgba(255,255,255,0.15)' />
+  <circle cx='60' cy='54' r='32' fill='url(#bloom-center)' />
+  <path d='M60 34c11 0 18 7 18 18s-7 18-18 18-18-7-18-18 7-18 18-18Z' fill='#fff' opacity='0.92' />
+  <path d='M36 86c4-12 14-18 24-18s20 6 24 18' fill='none' stroke='#fff' stroke-linecap='round' stroke-width='6' opacity='0.85' />
+</svg>

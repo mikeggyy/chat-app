@@ -1,0 +1,18 @@
+<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 120 120'>
+  <defs>
+    <linearGradient id='ember-bg' x1='100%' x2='0%' y1='0%' y2='100%'>
+      <stop offset='0' stop-color='#ff512f' />
+      <stop offset='0.6' stop-color='#dd2476' />
+      <stop offset='1' stop-color='#4a1d73' />
+    </linearGradient>
+    <radialGradient id='ember-glow' cx='55%' cy='45%' r='35%'>
+      <stop offset='0' stop-color='#ffe0e9' />
+      <stop offset='1' stop-color='#ff7ea6' stop-opacity='0' />
+    </radialGradient>
+  </defs>
+  <rect width='120' height='120' rx='36' fill='url(#ember-bg)' />
+  <circle cx='60' cy='52' r='30' fill='rgba(255,255,255,0.75)' />
+  <circle cx='60' cy='50' r='22' fill='url(#ember-glow)' />
+  <path d='M30 88c6-14 16-22 30-22s24 8 30 22' fill='none' stroke='rgba(255,255,255,0.88)' stroke-width='6' stroke-linecap='round' />
+  <path d='M46 54c4-4 10-6 14-6s10 2 14 6' fill='none' stroke='rgba(255,94,137,0.8)' stroke-width='4' stroke-linecap='round' />
+</svg>

@@ -1,0 +1,13 @@
+方向建議
+
+定義功能模組：auth(Google/Facebook/手機/Firebase)、matching(Tinder 式滑卡)、chat(一對一訊息串+OpenAI 4.1 介接)、profile(個人/AI 角色管理)、store(商城/內購)。
+架構分層：前端 Vue3 + Pinia/Router + Firebase SDK；後端 Node.js (REST/GraphQL) 擔任業務邏輯層，對接 OpenAI、Firebase Admin、第三方登入 webhook；Firebase Firestore/Storage/Functions 作為資料與 push 通路。
+資料模型：使用者、AI 角色、配對紀錄(含滑卡狀態/AI 偏好)、聊天紀錄(訊息/類型/安全標記)、商城項目/交易、通知 token。權限規則利用 Firestore Security Rules + 自管 JWT/Custom Claims。
+技術要點
+
+登入：前端用 Firebase Auth UI（Google/Facebook/電話 OTP）；後端使用 Admin SDK 驗證 ID token，必要時產出 Custom Claims（VIP、商城權限）。
+配對：Firebase 觸發器或 Node 定期 Jobs 計算推薦；記錄滑卡狀態後觸發與對應 AI 角色的會話初始化（可儲存於 Firestore/Realtime DB）。
+聊天：Vue3 組件化聊天 UI；Node 轉發訊息到 OpenAI 4.1（Streaming/Response moderation）；結果寫入 Firestore；考慮上限與費用控制、內容審查。
+商城：Firebase Functions 處理付款 webhook（Google Play/Billing or Stripe），同步使用者權限到 Firestore。要有交易與退款流程紀錄。
+安全：HTTPS，全程 token 驗證；Firestore 規則限制讀寫；敏感設定（OpenAI key 等）在 Node 端或 Firebase Functions；訊息內容上設 Rate Limit、濾敏感詞。
+App 封裝：以 Capacitor/Ionic 或 Tauri 封裝 Vue3；必要時串接原生模組（推播、In-App Purchases）。
