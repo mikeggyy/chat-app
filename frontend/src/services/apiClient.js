@@ -1,4 +1,5 @@
 import { auth } from "../firebase/auth";
+import { useLoadingStore } from "../stores/loadingStore";
 
 const DEFAULT_LOCAL_BASE_URL = "http://localhost:7000/api";
 const DEFAULT_PROD_BASE_URL =
@@ -10,7 +11,13 @@ function detectNetworkBaseUrl() {
   }
 
   const hostname = window.location.hostname;
-  if (!hostname || hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1" || hostname === "[::1]") {
+  if (
+    !hostname ||
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "[::1]"
+  ) {
     return null;
   }
 
@@ -61,67 +68,79 @@ function normalizeBaseUrl(value) {
   return `${trimmed}/api`;
 }
 
+function resolveLoadingStore() {
+  try {
+    return useLoadingStore();
+  } catch (error) {
+    return null;
+  }
+}
+
 export async function apiRequest(path, options = {}) {
   if (typeof path !== "string" || !path.length) {
     throw new Error("API request path must be a non-empty string");
   }
 
-  const isAbsoluteUrl = path.startsWith("http");
-  const normalizedPath = isAbsoluteUrl
-    ? path
-    : path.startsWith("/")
-    ? path
-    : `/${path}`;
-  const url = isAbsoluteUrl
-    ? normalizedPath
-    : `${API_BASE_URL}${normalizedPath}`;
-  const requestInit = { ...options };
-  requestInit.method = requestInit.method ?? "GET";
+  const loadingStore = resolveLoadingStore();
+  loadingStore?.startRequest();
 
-  const headers = new Headers(requestInit.headers || {});
+  try {
+    const isAbsoluteUrl = path.startsWith("http");
+    const normalizedPath = isAbsoluteUrl
+      ? path
+      : path.startsWith("/")
+      ? path
+      : `/${path}`;
+    const url = isAbsoluteUrl ? normalizedPath : `${API_BASE_URL}${normalizedPath}`;
+    const requestInit = { ...options };
+    requestInit.method = requestInit.method ?? "GET";
 
-  const user = auth.currentUser;
-  if (!user) {
-    throw new Error("尚未登入，請重新登入後再試");
-  }
+    const headers = new Headers(requestInit.headers || {});
 
-  const token = await user.getIdToken();
-  headers.set("Authorization", `Bearer ${token}`);
-
-  if (requestInit.body && !(requestInit.body instanceof FormData)) {
-    if (typeof requestInit.body === "object") {
-      headers.set(
-        "Content-Type",
-        headers.get("Content-Type") ?? "application/json"
-      );
-      requestInit.body = JSON.stringify(requestInit.body);
+    const user = auth.currentUser;
+    if (!user) {
+      throw new Error("尚未登入，請重新登入後再試");
     }
+
+    const token = await user.getIdToken();
+    headers.set("Authorization", `Bearer ${token}`);
+
+    if (requestInit.body && !(requestInit.body instanceof FormData)) {
+      if (typeof requestInit.body === "object") {
+        headers.set(
+          "Content-Type",
+          headers.get("Content-Type") ?? "application/json"
+        );
+        requestInit.body = JSON.stringify(requestInit.body);
+      }
+    }
+
+    requestInit.headers = headers;
+
+    const response = await fetch(url, requestInit);
+
+    let payload = null;
+    const contentType = response.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      payload = await response.json();
+    } else {
+      payload = await response.text();
+    }
+
+    if (!response.ok) {
+      const message =
+        payload && typeof payload === "object" && "message" in payload
+          ? payload.message
+          : `Request failed with status ${response.status}`;
+      const error = new Error(message);
+      error.status = response.status;
+      error.payload = payload;
+      error.url = url;
+      throw error;
+    }
+
+    return payload;
+  } finally {
+    loadingStore?.finishRequest();
   }
-
-  requestInit.headers = headers;
-
-  const response = await fetch(url, requestInit);
-
-  let payload = null;
-  const contentType = response.headers.get("content-type") || "";
-  if (contentType.includes("application/json")) {
-    payload = await response.json();
-  } else {
-    payload = await response.text();
-  }
-
-  if (!response.ok) {
-    const message =
-      payload && typeof payload === "object" && "message" in payload
-        ? payload.message
-        : `Request failed with status ${response.status}`;
-    const error = new Error(message);
-    error.status = response.status;
-    error.payload = payload;
-    error.url = url;
-    throw error;
-  }
-
-  return payload;
 }
-

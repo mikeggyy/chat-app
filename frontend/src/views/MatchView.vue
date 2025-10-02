@@ -1,9 +1,17 @@
-﻿<template>
+<template>
   <section class="match-screen">
     <div class="match-screen__card-area">
       <Transition name="card" mode="out-in">
+        <div
+          v-if="isLoadingDeck && !currentCard"
+          key="loading"
+          class="loading-state"
+        >
+          <BaseLoadingSpinner :show-label="true" label="配對資料載入中⋯" />
+        </div>
+
         <article
-          v-if="currentCard"
+          v-else-if="currentCard"
           :key="currentCardKey"
           class="match-card"
           :style="cardStyle"
@@ -58,13 +66,19 @@
           </div>
         </article>
 
-        <div v-else key="empty" class="empty-state">
+        <div
+          v-else-if="hasAttemptedLoad"
+          key="empty"
+          class="empty-state"
+        >
           <h3>還沒有可以配對的角色</h3>
           <p>調整條件或建立新的 AI 夥伴讓我們重新為你配對。</p>
           <button class="ghost" @click="resetDeck" :disabled="isLoadingDeck">
             重新整理牌組
           </button>
         </div>
+
+        <div v-else key="idle" class="loading-placeholder" aria-hidden="true" />
       </Transition>
     </div>
   </section>
@@ -73,6 +87,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import BaseLoadingSpinner from "../components/BaseLoadingSpinner.vue";
 import {
   fetchMatchDeck,
   favoriteMatchCard,
@@ -88,6 +103,7 @@ const currentIndex = ref(0);
 const favorites = ref([]);
 const isProcessing = ref(false);
 const isLoadingDeck = ref(false);
+const hasAttemptedLoad = ref(false);
 const lastAction = ref(null);
 let toastTimer = null;
 
@@ -180,6 +196,7 @@ async function loadDeck({ resetIndex = true } = {}) {
     setLastAction("error", { message: error.message ?? "無法載入配對列表" });
   } finally {
     isLoadingDeck.value = false;
+    hasAttemptedLoad.value = true;
   }
 }
 
@@ -554,6 +571,26 @@ onBeforeUnmount(() => {
   cursor: not-allowed;
 }
 
+.loading-state {
+  width: min(360px, 92vw);
+  padding: 3rem 2rem;
+  border-radius: 28px;
+  border: 1px solid rgba(248, 250, 252, 0.06);
+  background: rgba(15, 17, 27, 0.85);
+  box-shadow: 0 25px 50px rgba(5, 6, 8, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.loading-placeholder {
+  width: min(360px, 92vw);
+  min-height: 320px;
+  border-radius: 28px;
+  opacity: 0;
+  pointer-events: none;
+}
+
 .empty-state {
   width: min(360px, 92vw);
   padding: 3rem 2rem;
@@ -603,3 +640,9 @@ onBeforeUnmount(() => {
   }
 }
 </style>
+
+
+
+
+
+

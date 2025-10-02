@@ -1,19 +1,19 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-The workspace is split into `backend/`, `frontend/`, and `docs/`. Express services live in `backend/src` under `config/`, `controllers/`, `routes/`, `services/`, and `utils/`; keep new modules inside those folders and mirror existing naming. Vue 3 code sits in `frontend/src` with shared UI in `components/`, routed pages in `views/`, Pinia stores in `stores/`, and Firebase/API helpers in `services/`. Place static assets under `frontend/src/assets/` and seed data in `frontend/src/data/`. Architectural decisions are summarized in `docs/architecture.md`—reference it before large refactors.
+The workspace is split into `backend/`, `frontend/`, and `docs/`. Express code lives in `backend/src` under `config/`, `controllers/`, `routes/`, `services/`, and `utils/`; add new modules within those folders and mirror existing naming. Vue 3 code sits in `frontend/src` with shared UI in `components/`, routed pages in `views/`, state in Pinia stores under `stores/`, and API helpers in `services/`. Place static assets in `frontend/src/assets/` and seed data in `frontend/src/data/`; keep architectural notes in `docs/architecture.md` before refactors.
 
 ## Build, Test, and Development Commands
-Run `cd backend && npm install && npm run dev` for the Nodemon API server (uses `.env.local`). `cd backend && npm run start` builds and launches the production server. In the frontend, `cd frontend && npm install && npm run dev` starts the Vite HMR dev server, while `npm run build` creates `frontend/dist` for deployment. Install dependencies the first time you touch each workspace.
+Run `cd backend && npm install && npm run dev` for the Nodemon API server (reads `.env.local`). Use `cd backend && npm run start` to build and launch production mode. Frontend HMR runs with `cd frontend && npm install && npm run dev`, and `cd frontend && npm run build` outputs deployable files to `frontend/dist`.
 
 ## Coding Style & Naming Conventions
-Use ES modules with 2-space indentation. Name backend artifacts `<feature>.controller.js` and `<feature>.service.js`; Pinia stores follow `<Feature>Store.ts`. Vue components stay PascalCase and expose explicit props/emits. Run `npx prettier@3 --check .` before sending patches; configure editors to respect `.editorconfig`.
+Use ES modules and 2-space indentation across JS/TS/Vue files. Name backend files `<feature>.controller.js` and `<feature>.service.js`; Pinia stores follow `<Feature>Store.ts`. Keep Vue components in PascalCase with explicit `props` and `emits`. Run `npx prettier@3 --check .` before submitting patches, and respect `.editorconfig`.
 
 ## Testing Guidelines
-Backend tests will target Jest and frontend tests Vitest, colocated as `*.spec.js` or `*.spec.ts`. Mock Firebase, OpenAI, and other remote services. Until suites stabilize, document manual walkthroughs for chat flows, swipe decks, and entitlements in your PR description.
+Backend tests use Jest and frontend tests use Vitest, colocated as `*.spec.js` or `*.spec.ts`. Mock Firebase, OpenAI, and other remote services. Document manual walkthroughs for chat flows, swipe decks, and entitlements until automated suites stabilize.
 
 ## Commit & Pull Request Guidelines
-Write imperative commit subjects (e.g., `Add swipe matchmaking controller`) with wrapped bodies near 72 characters. PRs should list affected agents, link tickets, include UI screenshots or API traces, enumerate new env vars, and note tests run. Gate risky features behind flags so staging stays stable.
+Write imperative commit subjects (e.g., `Add swipe matchmaking controller`) with bodies wrapped near 72 characters. PRs should list affected agents, link tickets, attach UI screenshots or API traces, enumerate new env vars, and note tests run. Gate risky features behind flags so staging remains stable.
 
 ## Security & Configuration Tips
-Keep secrets in `.env.local` and never commit them. When adjusting persona logic or Firestore schema, sync the changes with prompts described in `docs/architecture.md` and coordinate with notification/commerce owners so token and entitlement updates land together.
+Store secrets in `.env.local` and keep them out of version control. When changing persona logic or Firestore schema, update prompts in `docs/architecture.md` and coordinate with notification and commerce owners so token and entitlement updates deploy together.

@@ -1,31 +1,36 @@
-﻿<template>
+<template>
   <div class="app-wrapper" :class="{ 'auth-layout': isAuthLayout }">
     <RouterView v-if="isAuthLayout" />
     <div v-else class="mobile-shell">
       <div class="mobile-shell__layout">
         <AppTopBar :title="pageTitle" @logout="handleLogout" />
-        <main class="mobile-shell__content" :class="contentClasses">
+        <main ref="shellContent" class="mobile-shell__content" :class="contentClasses">
           <RouterView />
         </main>
         <AppBottomNav class="mobile-shell__bottom-nav" />
       </div>
     </div>
+    <GlobalLoadingOverlay />
   </div>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, onMounted } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { RouterView, useRoute, useRouter } from "vue-router";
 import AppTopBar from "./components/AppTopBar.vue";
 import AppBottomNav from "./components/AppBottomNav.vue";
+import GlobalLoadingOverlay from "./components/GlobalLoadingOverlay.vue";
 import { useAuthStore } from "./stores/authStore";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const shellContent = ref(null);
 
-onMounted(() => {
+onMounted(async () => {
   authStore.init();
+  await nextTick();
+  resetShellScroll();
 });
 
 onBeforeUnmount(() => {
@@ -37,6 +42,25 @@ const pageTitle = computed(() => route.meta.title ?? "Love Story");
 const contentClasses = computed(() => ({
   "mobile-shell__content--no-scroll": Boolean(route.meta.disableScroll),
 }));
+
+function resetShellScroll({ behavior = "auto" } = {}) {
+  const el = shellContent.value;
+  if (!el) return;
+  if (typeof el.scrollTo === "function") {
+    el.scrollTo({ top: 0, left: 0, behavior });
+  } else {
+    el.scrollTop = 0;
+  }
+}
+
+watch(
+  () => route.fullPath,
+  async () => {
+    await nextTick();
+    resetShellScroll();
+  },
+  { flush: "post" }
+);
 
 async function handleLogout() {
   await authStore.logout();
@@ -104,5 +128,7 @@ async function handleLogout() {
   }
 }
 </style>
+
+
 
 
