@@ -13,7 +13,11 @@ loadEnv();
 const app = express();
 const origins = (process.env.FRONTEND_ORIGIN ?? '').split(',').map((origin) => origin.trim()).filter(Boolean);
 
-app.use(helmet());
+app.use(
+  helmet({
+    referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  })
+);
 app.use(
   cors({
     origin: origins.length ? origins : true,
@@ -29,8 +33,14 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
 app.get('/health', healthCheck);
 app.use('/api', router);
+app.use(router);
 app.use(notFoundHandler);
 app.use(errorHandler);
 
 export default app;
+
+
+
+
+
 

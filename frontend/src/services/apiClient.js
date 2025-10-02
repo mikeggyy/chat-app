@@ -4,11 +4,29 @@ const DEFAULT_LOCAL_BASE_URL = "http://localhost:7000/api";
 const DEFAULT_PROD_BASE_URL =
   "https://us-central1-test-chat-app-888.cloudfunctions.net/api";
 
-const API_BASE_URL = normalizeBaseUrl(
+const resolvedBaseUrl =
   import.meta.env.VITE_BACKEND_API_URL ??
-    import.meta.env.VITE_API_BASE_URL ??
-    (import.meta.env.DEV ? DEFAULT_LOCAL_BASE_URL : DEFAULT_PROD_BASE_URL)
-);
+  import.meta.env.VITE_API_BASE_URL ??
+  (import.meta.env.DEV ? DEFAULT_LOCAL_BASE_URL : DEFAULT_PROD_BASE_URL);
+
+const API_BASE_URL = normalizeBaseUrl(sanitizeBaseUrl(resolvedBaseUrl));
+
+function sanitizeBaseUrl(value) {
+  if (!value || typeof value !== "string") {
+    return import.meta.env.DEV ? DEFAULT_LOCAL_BASE_URL : DEFAULT_PROD_BASE_URL;
+  }
+
+  const trimmed = value.trim();
+  // 避免在正式環境仍指向本機端點。
+  if (
+    !import.meta.env.DEV &&
+    /^(https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])/i.test(trimmed)
+  ) {
+    return DEFAULT_PROD_BASE_URL;
+  }
+
+  return trimmed;
+}
 
 function normalizeBaseUrl(value) {
   if (!value || typeof value !== "string") {
