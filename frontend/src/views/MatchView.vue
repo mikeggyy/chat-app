@@ -22,6 +22,17 @@
           @pointerleave="onPointerLeave"
         >
           <div class="match-card__surface">
+            <div class="match-card__swipe-hints">
+              <div class="match-card__hint match-card__hint--left">
+                <span class="match-card__hint-icon">←</span>
+              </div>
+              <div class="match-card__hint match-card__hint--center">
+                拖曳卡片來探索
+              </div>
+              <div class="match-card__hint match-card__hint--right">
+                <span class="match-card__hint-icon">→</span>
+              </div>
+            </div>
             <img
               :src="currentCard.image"
               :alt="currentCard.name"
@@ -456,6 +467,98 @@ onBeforeUnmount(() => {
   );
 }
 
+.match-card__swipe-hints {
+  position: absolute;
+  top: clamp(0.85rem, 3.5vw, 1.6rem);
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0 clamp(1rem, 4vw, 1.8rem);
+  pointer-events: none;
+  font-size: 0.85rem;
+  color: rgba(241, 245, 249, 0.92);
+  text-shadow: 0 6px 18px rgba(5, 6, 8, 0.6);
+  z-index: 3;
+}
+
+.match-card__hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.42rem 0.75rem;
+  border-radius: 999px;
+  background: rgba(15, 17, 27, 0.78);
+  border: 1px solid rgba(148, 163, 184, 0.32);
+  box-shadow: 0 12px 24px rgba(5, 6, 8, 0.38);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.match-card__hint--left {
+  transform: rotate(-5deg);
+  animation: match-card-hint-wiggle 2.8s ease-in-out infinite;
+}
+
+.match-card__hint--right {
+  transform: rotate(5deg);
+  animation: match-card-hint-wiggle 2.8s ease-in-out infinite;
+  animation-delay: 1.4s;
+}
+
+.match-card__hint--center {
+  background: rgba(241, 245, 249, 0.12);
+  border: 1px dashed rgba(148, 163, 184, 0.4);
+  padding: 0.4rem 1rem;
+  border-radius: 12px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  animation: match-card-hint-pulse 3.2s ease-in-out infinite;
+}
+
+.match-card__hint-icon {
+  font-size: 1.1rem;
+}
+
+.match-card__hint-label {
+  white-space: nowrap;
+}
+
+@keyframes match-card-hint-wiggle {
+  0%,
+  100% {
+    transform: translateY(0) rotate(-5deg);
+  }
+
+  50% {
+    transform: translateY(-4px) rotate(-3deg);
+  }
+}
+
+@keyframes match-card-hint-pulse {
+  0%,
+  100% {
+    opacity: 0.92;
+  }
+
+  50% {
+    opacity: 0.62;
+  }
+}
+
+@media (max-width: 420px) {
+  .match-card__swipe-hints {
+    font-size: 0.78rem;
+    gap: 0.5rem;
+    padding: 0 0.95rem;
+  }
+
+  .match-card__hint {
+    padding: 0.38rem 0.65rem;
+  }
+}
 .match-card__details {
   position: absolute;
   left: 0;
