@@ -76,7 +76,9 @@
           >
             <p class="message__text">
               <template
-                v-for="(segment, segmentIndex) in buildRichSegments(message.text)"
+                v-for="(segment, segmentIndex) in buildRichSegments(
+                  message.text
+                )"
                 :key="`message-${message.id}-${segmentIndex}`"
               >
                 <span
@@ -84,7 +86,10 @@
                     'message__segment',
                     segment.type === 'scene' ? 'message__scene' : '',
                     segment.type === 'tone' ? 'message__tone' : '',
-                    segment.type === 'action' ? 'message__action' : ''
+                    segment.type === 'action' ? 'message__action' : '',
+                    segment.type === 'context'
+                      ? 'context-chip message__context'
+                      : '',
                   ]"
                 >
                   {{ segment.display }}
@@ -104,30 +109,64 @@
         </div>
       </div>
 
-      <div v-if="suggestions.length" class="chat-panel__suggestions" ref="suggestionContainer">
-        <button
-          v-for="(suggestion, index) in suggestions"
-          :key="`suggestion-${index}`"
-          type="button"
-          class="suggestion-chip"
-          @click="applySuggestion(suggestion)"
+      <div
+        v-if="suggestions.length || generatingSuggestions"
+        class="chat-panel__suggestions"
+        :class="{ 'chat-panel__suggestions--loading': generatingSuggestions }"
+        ref="suggestionContainer"
+      >
+        <div
+          v-if="generatingSuggestions && !suggestions.length"
+          class="chat-panel__suggestions-loading"
+          role="status"
+          aria-live="polite"
         >
-          <template
-            v-for="(segment, segmentIndex) in buildRichSegments(suggestion)"
-            :key="`suggestion-${index}-${segmentIndex}`"
+          <span class="spinner" aria-hidden="true" />
+          <span class="chat-panel__suggestions-loading-text"
+            >產生建議中...</span
           >
-            <span
-              :class="[
-                'suggestion-chip__segment',
-                segment.type === 'scene' ? 'suggestion-chip__scene' : '',
-                segment.type === 'tone' ? 'suggestion-chip__tone' : '',
-                segment.type === 'action' ? 'suggestion-chip__action' : ''
-              ]"
+        </div>
+
+        <template v-else>
+          <button
+            v-for="(suggestion, index) in suggestions"
+            :key="`suggestion-${index}`"
+            type="button"
+            class="suggestion-chip"
+            @click="applySuggestion(suggestion)"
+          >
+            <template
+              v-for="(segment, segmentIndex) in buildRichSegments(suggestion)"
+              :key="`suggestion-${index}-${segmentIndex}`"
             >
-              {{ segment.display }}
-            </span>
-          </template>
-        </button>
+              <span
+                :class="[
+                  'suggestion-chip__segment',
+                  segment.type === 'scene' ? 'suggestion-chip__scene' : '',
+                  segment.type === 'tone' ? 'suggestion-chip__tone' : '',
+                  segment.type === 'action' ? 'suggestion-chip__action' : '',
+                  segment.type === 'context'
+                    ? 'context-chip suggestion-chip__context'
+                    : '',
+                ]"
+              >
+                {{ segment.display }}
+              </span>
+            </template>
+          </button>
+        </template>
+
+        <div
+          v-if="generatingSuggestions && suggestions.length"
+          class="chat-panel__suggestions-inline-loading"
+          role="status"
+          aria-live="polite"
+        >
+          <span class="spinner" aria-hidden="true" />
+          <span class="chat-panel__suggestions-loading-text"
+            >產生建議中...</span
+          >
+        </div>
       </div>
 
       <p v-if="error" class="chat-panel__error">{{ error }}</p>
@@ -304,94 +343,220 @@ function normalizeSampleMessages(input) {
 }
 
 const RICH_TOKEN_REGEX = /\[\[(scene|tone|action):([^\]]+)\]\]/gi;
+const CONTEXT_WRAPPER_REGEX = /[（(]([^（）()]+)[）)]/g;
+const TRAILING_PUNCTUATION_REGEX = /^[,，.。!?！？]/;
 
-function extractRichMetadata(raw) {
-  if (typeof raw !== 'string') {
-    return {
-      scene: null,
-      tone: null,
-      action: null,
-      text: raw == null ? '' : String(raw)
-    };
+function parseRichSegments(raw) {
+  const source = typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+  if (!source) {
+    return [];
   }
 
-  const tokens = { scene: null, tone: null, action: null };
-  let remainder = raw;
-  remainder = remainder.replace(RICH_TOKEN_REGEX, (match, key, value) => {
-    const normalizedKey = String(key).trim().toLowerCase();
-    if (normalizedKey === 'scene' || normalizedKey === 'tone' || normalizedKey === 'action') {
-      tokens[normalizedKey] = value.trim();
+  const segments = [];
+  let lastIndex = 0;
+
+  source.replace(RICH_TOKEN_REGEX, (match, key, value, offset) => {
+    if (offset > lastIndex) {
+      const textPart = source.slice(lastIndex, offset);
+      if (textPart) {
+        segments.push({
+          type: "text",
+          value: textPart,
+          display: textPart,
+        });
+      }
     }
-    return '';
+
+    const normalizedKey = String(key).trim().toLowerCase();
+    const normalizedValue =
+      typeof value === "string" ? value.trim() : String(value ?? "").trim();
+
+    if (
+      normalizedValue &&
+      (normalizedKey === "scene" ||
+        normalizedKey === "tone" ||
+        normalizedKey === "action")
+    ) {
+      segments.push({
+        type: normalizedKey,
+        value: normalizedValue,
+        display: normalizedValue,
+      });
+    }
+
+    lastIndex = offset + match.length;
+    return "";
   });
 
-  return {
-    scene: tokens.scene,
-    tone: tokens.tone,
-    action: tokens.action,
-    text: remainder.trim()
-  };
-}
-
-function buildRichSegments(raw) {
-  const metadata = extractRichMetadata(raw);
-  const segments = [];
-
-  if (metadata.scene) {
-    segments.push({ type: 'scene', value: metadata.scene, display: '在' + metadata.scene });
-  }
-
-  if (metadata.tone) {
-    segments.push({ type: 'tone', value: metadata.tone, display: '(' + metadata.tone + ')' });
-  }
-
-  if (metadata.text) {
-    segments.push({ type: 'text', value: metadata.text, display: metadata.text });
-  }
-
-  if (metadata.action) {
-    const prefix = segments.length ? '，' : '';
-    segments.push({ type: 'action', value: metadata.action, display: prefix + metadata.action });
-  }
-
-  if (!segments.length) {
-    const fallback = typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
-    segments.push({ type: 'text', value: fallback, display: fallback });
+  if (lastIndex < source.length) {
+    const trailing = source.slice(lastIndex);
+    if (trailing) {
+      segments.push({
+        type: "text",
+        value: trailing,
+        display: trailing,
+      });
+    }
   }
 
   return segments;
 }
 
+function expandContextSegments(segments = []) {
+  const expanded = [];
+
+  for (const segment of segments) {
+    if (!segment) {
+      continue;
+    }
+
+    if (
+      segment.type === "scene" ||
+      segment.type === "tone" ||
+      segment.type === "action"
+    ) {
+      const contextValue =
+        typeof segment.display === "string"
+          ? segment.display
+          : typeof segment.value === "string"
+          ? segment.value
+          : "";
+      if (contextValue) {
+        expanded.push({
+          type: "context",
+          value: contextValue,
+          display: contextValue,
+        });
+      }
+      continue;
+    }
+
+    if (segment.type !== "text") {
+      expanded.push(segment);
+      continue;
+    }
+
+    const textValue =
+      typeof segment.value === "string"
+        ? segment.value
+        : typeof segment.display === "string"
+        ? segment.display
+        : "";
+
+    if (!textValue) {
+      expanded.push(segment);
+      continue;
+    }
+
+    let lastIndex = 0;
+    let matched = false;
+    let match;
+    CONTEXT_WRAPPER_REGEX.lastIndex = 0;
+
+    while ((match = CONTEXT_WRAPPER_REGEX.exec(textValue)) !== null) {
+      matched = true;
+      const prefix = textValue.slice(lastIndex, match.index);
+      if (prefix) {
+        expanded.push({
+          type: "text",
+          value: prefix,
+          display: prefix,
+        });
+      }
+
+      const contextValue = (match[1] ?? "").trim();
+      if (contextValue) {
+        expanded.push({
+          type: "context",
+          value: contextValue,
+          display: contextValue,
+        });
+      }
+
+      lastIndex = match.index + match[0].length;
+    }
+
+    const suffix = textValue.slice(lastIndex);
+    if (!matched) {
+      expanded.push(segment);
+    } else if (suffix) {
+      expanded.push({
+        type: "text",
+        value: suffix,
+        display: suffix,
+      });
+    }
+  }
+
+  return expanded;
+}
+
+function buildRichSegments(raw) {
+  const parsed = parseRichSegments(raw);
+  const segments = expandContextSegments(parsed);
+
+  if (segments.length) {
+    return segments;
+  }
+
+  const fallback =
+    typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+
+  if (!fallback) {
+    return [];
+  }
+
+  return expandContextSegments([
+    {
+      type: "text",
+      value: fallback,
+      display: fallback,
+    },
+  ]);
+}
+
 function formatRichMessageForDraft(raw) {
-  const metadata = extractRichMetadata(raw);
-  let result = '';
+  const segments = buildRichSegments(raw);
 
-  if (metadata.scene) {
-    result += '在' + metadata.scene;
-    if (metadata.tone) {
-      result += '(' + metadata.tone + ')';
+  if (!segments.length) {
+    return typeof raw === "string" ? raw : raw == null ? "" : String(raw);
+  }
+
+  let result = "";
+
+  for (let i = 0; i < segments.length; i += 1) {
+    const segment = segments[i];
+    const rawDisplay =
+      typeof segment?.display === "string" ? segment.display : "";
+    if (!rawDisplay) {
+      continue;
     }
-  } else if (metadata.tone) {
-    result += '(' + metadata.tone + ')';
-  }
 
-  if (metadata.text) {
-    if (!result || metadata.text.startsWith('，')) {
-      result += metadata.text;
-    } else {
-      result += metadata.text;
+    let appendValue = rawDisplay;
+    if (segment.type === "context") {
+      appendValue = `（${rawDisplay}）`;
+    }
+
+    result += appendValue;
+
+    if (segment.type === "context" && i < segments.length - 1) {
+      const nextDisplay =
+        typeof segments[i + 1]?.display === "string"
+          ? segments[i + 1].display
+          : "";
+      const hasLeadingWhitespace = /^\s/.test(nextDisplay);
+      const nextChar = nextDisplay.trimStart().charAt(0);
+      if (
+        !hasLeadingWhitespace &&
+        nextChar &&
+        !TRAILING_PUNCTUATION_REGEX.test(nextChar)
+      ) {
+        result += " ";
+      }
     }
   }
 
-  if (metadata.action) {
-    result += result ? '，' + metadata.action : metadata.action;
-  }
-
-  if (!result) {
-    return typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
-  }
-
-  return result;
+  return result.trim();
 }
 const sampleMessageText = computed(() => {
   const sources = [
@@ -407,7 +572,7 @@ const sampleMessageText = computed(() => {
     }
   }
 
-  return '';
+  return "";
 });
 
 function createSampleMessage() {
@@ -463,7 +628,9 @@ const latestAiMessageKey = computed(() => {
     if (entry?.sender === "ai") {
       const idPart = entry.id ? String(entry.id) : `index-${i}`;
       const text = typeof entry.text === "string" ? entry.text.trim() : "";
-      const hash = text ? `${text.length.toString(36)}:${text.slice(-12)}` : "empty";
+      const hash = text
+        ? `${text.length.toString(36)}:${text.slice(-12)}`
+        : "empty";
       return `${props.conversationId}:${idPart}:${hash}`;
     }
   }
@@ -612,7 +779,7 @@ function cancelClear() {
 
 function applySuggestion(suggestion) {
   const formatted = formatRichMessageForDraft(suggestion);
-  const text = typeof formatted === 'string' ? formatted.trim() : '';
+  const text = typeof formatted === "string" ? formatted.trim() : "";
   if (!text || sending.value || loading.value) {
     return;
   }
@@ -620,10 +787,11 @@ function applySuggestion(suggestion) {
   handleSend();
 }
 
-
 async function generateSuggestions(options) {
   const isEvent =
-    options && typeof options === "object" && typeof options.preventDefault === "function";
+    options &&
+    typeof options === "object" &&
+    typeof options.preventDefault === "function";
   if (isEvent) {
     options.preventDefault();
   }
@@ -655,6 +823,7 @@ async function generateSuggestions(options) {
       `/chats/${props.conversationId}/suggestions`,
       {
         method: "POST",
+        skipGlobalLoading: true,
       }
     );
     const data = response?.data?.suggestions ?? [];
@@ -689,12 +858,20 @@ function handleOutsideSuggestionClick(event) {
   }
 
   const container = suggestionContainer.value;
-  if (container && typeof container.contains === "function" && container.contains(target)) {
+  if (
+    container &&
+    typeof container.contains === "function" &&
+    container.contains(target)
+  ) {
     return;
   }
 
   const trigger = suggestionButton.value;
-  if (trigger && typeof trigger.contains === "function" && trigger.contains(target)) {
+  if (
+    trigger &&
+    typeof trigger.contains === "function" &&
+    trigger.contains(target)
+  ) {
     return;
   }
 
@@ -796,14 +973,14 @@ watch(
 onMounted(() => {
   setupSpeechRecognition();
   if (typeof window !== "undefined") {
-    window.addEventListener('click', handleOutsideSuggestionClick);
+    window.addEventListener("click", handleOutsideSuggestionClick);
   }
 });
 
 onBeforeUnmount(() => {
   destroySpeechRecognition();
   if (typeof window !== "undefined") {
-    window.removeEventListener('click', handleOutsideSuggestionClick);
+    window.removeEventListener("click", handleOutsideSuggestionClick);
   }
 });
 </script>
@@ -1013,9 +1190,37 @@ onBeforeUnmount(() => {
 }
 
 .chat-panel__suggestions {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 0.6rem;
+  align-items: center;
+}
+
+.chat-panel__suggestions--loading {
+  gap: 0.75rem;
+}
+
+.chat-panel__suggestions-loading,
+.chat-panel__suggestions-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: rgba(226, 232, 240, 0.9);
+}
+
+.chat-panel__suggestions-loading {
+  padding: 0.2rem 0.1rem;
+}
+
+.chat-panel__suggestions-loading-text {
+  font-size: 0.82rem;
+  color: rgba(248, 250, 252, 0.95);
+  font-weight: 600;
+}
+
+.chat-panel__suggestions-inline-loading {
+  margin-left: 0.35rem;
 }
 
 .suggestion-chip {
@@ -1183,11 +1388,29 @@ onBeforeUnmount(() => {
   color: rgba(226, 232, 240, 0.7);
 }
 
+.context-chip {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.75rem;
+  color: rgba(226, 232, 240, 0.94);
+  background: rgba(148, 163, 184, 0.26);
+  border: 1px solid rgba(148, 163, 184, 0.42);
+  padding: 0.12rem 0.52rem;
+  border-radius: 999px;
+  letter-spacing: 0.01em;
+  margin-right: 0.45rem;
+  line-height: 1;
+}
+
+.message__context {
+}
+
 .suggestion-chip__segment {
   display: inline-flex;
   align-items: center;
   font-size: 0.8rem;
   margin-right: 0.2rem;
+  text-align: left;
 }
 
 .suggestion-chip__scene {
@@ -1204,5 +1427,7 @@ onBeforeUnmount(() => {
   color: rgba(96, 165, 250, 0.85);
 }
 
+.suggestion-chip__context {
+  margin-right: 0.3rem;
+}
 </style>
-

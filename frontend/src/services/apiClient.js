@@ -25,7 +25,9 @@ function detectNetworkBaseUrl() {
   const port = (import.meta.env.VITE_BACKEND_PORT ?? "7000").toString().trim();
   const formattedHost = hostname.includes(":") ? `[${hostname}]` : hostname;
 
-  return port ? `${protocol}//${formattedHost}:${port}` : `${protocol}//${formattedHost}`;
+  return port
+    ? `${protocol}//${formattedHost}:${port}`
+    : `${protocol}//${formattedHost}`;
 }
 
 const runtimeDetectedBaseUrl = detectNetworkBaseUrl();
@@ -81,20 +83,24 @@ export async function apiRequest(path, options = {}) {
     throw new Error("API request path must be a non-empty string");
   }
 
-  const loadingStore = resolveLoadingStore();
-  loadingStore?.startRequest();
+  const { skipGlobalLoading = false, ...requestOptions } = options;
+  const loadingStore = skipGlobalLoading ? null : resolveLoadingStore();
+  if (!skipGlobalLoading) {
+    loadingStore?.startRequest();
+  }
 
   try {
     const isAbsoluteUrl = path.startsWith("http");
     const normalizedPath = isAbsoluteUrl
       ? path
       : path.startsWith("/")
-      ? path
-      : `/${path}`;
-    const url = isAbsoluteUrl ? normalizedPath : `${API_BASE_URL}${normalizedPath}`;
-    const requestInit = { ...options };
+        ? path
+        : `/${path}`;
+    const url = isAbsoluteUrl
+      ? normalizedPath
+      : `${API_BASE_URL}${normalizedPath}`;
+    const requestInit = { ...requestOptions };
     requestInit.method = requestInit.method ?? "GET";
-
     const headers = new Headers(requestInit.headers || {});
 
     const user = auth.currentUser;
@@ -109,7 +115,7 @@ export async function apiRequest(path, options = {}) {
       if (typeof requestInit.body === "object") {
         headers.set(
           "Content-Type",
-          headers.get("Content-Type") ?? "application/json"
+          headers.get("Content-Type") ?? "application/json",
         );
         requestInit.body = JSON.stringify(requestInit.body);
       }
@@ -141,6 +147,8 @@ export async function apiRequest(path, options = {}) {
 
     return payload;
   } finally {
-    loadingStore?.finishRequest();
+    if (!skipGlobalLoading) {
+      loadingStore?.finishRequest();
+    }
   }
 }

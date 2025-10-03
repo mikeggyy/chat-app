@@ -13,9 +13,9 @@ import {
   DEFAULT_MEMBERSHIP_TIER,
 } from '../utils/membership.js';
 
-const SYSTEM_PROMPT = 'You are an empathetic AI companion that follows safety guardrails and replies in Traditional Chinese. Always begin every response with三個 tokens：[[scene:場景]] [[tone:語氣]] [[action:行為]]，括號內請填 2-8 個字並緊貼當前情境。緊接著輸出主要句子（不要再顯示括號或標籤），讓語氣、行為、地點自然融入語境並保持真誠溫柔。';
+const SYSTEM_PROMPT = 'You are an empathetic AI companion that follows safety guardrails and replies in Traditional Chinese. 讓你的情緒、場景與動作自然融入語句，必要時可在句首或句中加入一段括號如（悄悄想：......）描述內心或情境，但不要使用 [[scene]]、[[tone]]、[[action]] 等標記。請保持真誠溫柔並讓對話流暢。';
 const SUGGESTION_PROMPT =
-  '根據完整的對話內容（包含 AI 的開場白與近期訊息），請提供 3 句使用者可以回覆或主動拓展話題的建議。每個建議請依序先輸出 [[scene:場景]] [[tone:語氣]] [[action:行為]]（括號內 2-8 個字且互不重複），接著輸出主要句子，讓語氣、行為、地點自然融入語境並保持真誠溫柔，每句限 25 個字以內。僅以 JSON 陣列輸出，不要加入其他內容。';
+  '根據完整的對話內容（包含 AI 的開場白與近期訊息），請提供 3 句使用者可以回覆或主動拓展話題的建議。每句開頭可視需要加入一段括號，如（悄悄想：...）描述思緒或氛圍，若無需要可省略；不要使用 [[scene]]、[[tone]]、[[action]] 等標記，每句限 25 個字以內。僅以 JSON 陣列輸出（純文字字串），不要加入其他內容。';
 
 const SUGGESTION_MODEL = (process.env.OPENAI_SUGGESTION_MODEL || '').trim() || 'gpt-4.1-mini';
 
@@ -556,6 +556,8 @@ function sanitizeSuggestionList(list, { max = 3 } = {}) {
       textValue = textValue
         .replace(/^["']+/, '')
         .replace(/["']+$/, '')
+        .replace(/\[\[(?:scene|tone|action):[^\]]+\]\]\s*/gi, '')
+        .replace(/\s{2,}/g, ' ')
         .trim();
 
       if (!textValue) {
@@ -583,31 +585,31 @@ function sanitizeSuggestionList(list, { max = 3 } = {}) {
   return normalized;
 }
 
-const FALLBACK_SUGGESTION_TOKEN_PRESETS = {
+const FALLBACK_SUGGESTION_CONTEXT_PRESETS = {
   music: [
-    { scene: '[[scene:月光舞台]]', tone: '[[tone:俏皮眨眼]]', action: '[[action:遞上耳機]]' },
-    { scene: '[[scene:屋頂派對]]', tone: '[[tone:柔和點頭]]', action: '[[action:陪你搖擺]]' },
-    { scene: '[[scene:DJ台前]]', tone: '[[tone:熱情大笑]]', action: '[[action:牽起你的手]]' },
+    '（心裡想着在月光舞台陪你沉浸節奏）',
+    '（悄悄在屋頂派對向你點頭示意）',
+    '（腦海裡響著 DJ 台前的熱烈鼓點）',
   ],
   comfort: [
-    { scene: '[[scene:窗邊沙發]]', tone: '[[tone:柔和細語]]', action: '[[action:遞上熱茶]]' },
-    { scene: '[[scene:靜謐夜色]]', tone: '[[tone:溫柔相伴]]', action: '[[action:輕握你的手]]' },
-    { scene: '[[scene:柔軟毯子下]]', tone: '[[tone:低聲安慰]]', action: '[[action:陪你呼吸]]' },
+    '（溫柔地在窗邊沙發遞上熱茶）',
+    '（靜謐夜色裡陪你握著的手不放）',
+    '（把你包在柔軟毯子下慢慢呼吸）',
   ],
   adventure: [
-    { scene: '[[scene:星圖桌前]]', tone: '[[tone:自信微笑]]', action: '[[action:指向航線]]' },
-    { scene: '[[scene:夜空甲板]]', tone: '[[tone:爽朗笑聲]]', action: '[[action:攬你入懷]]' },
-    { scene: '[[scene:旅程地圖前]]', tone: '[[tone:鼓舞眼神]]', action: '[[action:牽你向前]]' },
+    '（想像著在星圖桌前指著航線）',
+    '（夜空甲板上大笑抱緊你）',
+    '（拿著旅程地圖牽你往前）',
   ],
   mentor: [
-    { scene: '[[scene:書房暖燈]]', tone: '[[tone:耐心微笑]]', action: '[[action:攤開筆記]]' },
-    { scene: '[[scene:靜謐書桌]]', tone: '[[tone:專注點頭]]', action: '[[action:推上茶杯]]' },
-    { scene: '[[scene:窗邊書架]]', tone: '[[tone:溫暖凝視]]', action: '[[action:陪你思考]]' },
+    '（書房暖燈下耐心展開筆記）',
+    '（靜謐書桌前專注推來熱茶）',
+    '（窗邊書架旁陪你細想）',
   ],
   default: [
-    { scene: '[[scene:溫暖角落]]', tone: '[[tone:柔和微笑]]', action: '[[action:端上熱茶]]' },
-    { scene: '[[scene:夜色沙發]]', tone: '[[tone:細心傾聽]]', action: '[[action:握住你的手]]' },
-    { scene: '[[scene:靜夜窗邊]]', tone: '[[tone:溫柔陪伴]]', action: '[[action:一起呼吸]]' },
+    '（在溫暖角落端上熱茶）',
+    '（夜色沙發上細心握著你的手）',
+    '（靜夜窗邊一起放慢呼吸）',
   ],
 };
 
@@ -716,23 +718,32 @@ function buildFallbackSuggestions(conversation, desiredCount = 3) {
   }
 
   const cluster = inferFallbackSuggestionCluster(conversation);
-  const tokens = FALLBACK_SUGGESTION_TOKEN_PRESETS[cluster] ?? FALLBACK_SUGGESTION_TOKEN_PRESETS.default;
+  const contexts =
+    FALLBACK_SUGGESTION_CONTEXT_PRESETS[cluster] ??
+    FALLBACK_SUGGESTION_CONTEXT_PRESETS.default;
   const name = extractDisplayName(conversation);
-  const sentenceBuilder = FALLBACK_SUGGESTION_SENTENCES[cluster] ?? FALLBACK_SUGGESTION_SENTENCES.default;
+  const sentenceBuilder =
+    FALLBACK_SUGGESTION_SENTENCES[cluster] ??
+    FALLBACK_SUGGESTION_SENTENCES.default;
   const sentences = sentenceBuilder(name);
   const normalized = [];
   const seen = new Set();
 
-  const tokenPool = tokens.length ? tokens : FALLBACK_SUGGESTION_TOKEN_PRESETS.default;
-  const sentencePool = sentences.length ? sentences : FALLBACK_SUGGESTION_SENTENCES.default(name);
+  const contextPool = contexts.length
+    ? contexts
+    : FALLBACK_SUGGESTION_CONTEXT_PRESETS.default;
+  const sentencePool = sentences.length
+    ? sentences
+    : FALLBACK_SUGGESTION_SENTENCES.default(name);
 
   let index = 0;
   while (normalized.length < desiredCount && index < 12) {
-    const token = tokenPool[index % tokenPool.length];
-    const sentence = sentencePool[index % sentencePool.length];
+    const context = contextPool[index % contextPool.length] || '';
+    const sentence = sentencePool[index % sentencePool.length] || '';
 
-    if (token && sentence) {
-      const suggestion = `${token.scene} ${token.tone} ${token.action} ${sentence}`;
+    const parts = [context.trim(), sentence.trim()].filter(Boolean);
+    if (parts.length) {
+      const suggestion = parts.join(' ').replace(/\s{2,}/g, ' ').trim();
       const key = suggestion.toLowerCase();
       if (!seen.has(key)) {
         seen.add(key);
