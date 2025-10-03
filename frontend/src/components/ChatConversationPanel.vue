@@ -51,17 +51,16 @@
         </button>
       </header>
 
-      <div
-        v-if="cardInfo.summary"
-        class="chat-panel__summary"
-        role="note"
-        aria-label="角色簡介"
-      >
-        <span class="chat-panel__summary-label">角色簡介</span>
-        <p class="chat-panel__summary-text">{{ cardInfo.summary }}</p>
-      </div>
-
       <div class="chat-panel__messages" ref="messageList">
+        <div
+          v-if="cardInfo.summary"
+          class="chat-panel__summary"
+          role="note"
+          aria-label="角色簡介"
+        >
+          <span class="chat-panel__summary-label">角色簡介</span>
+          <p class="chat-panel__summary-text">{{ cardInfo.summary }}</p>
+        </div>
         <TransitionGroup
           name="message"
           tag="div"
@@ -863,7 +862,7 @@ onBeforeUnmount(() => {
 }
 
 .chat-panel__summary {
-  margin: 0 0 1rem;
+  margin: 0;
   padding: 0.85rem 1rem;
   border-radius: 1rem;
   background: rgba(15, 23, 42, 0.65);
@@ -1206,5 +1205,4 @@ onBeforeUnmount(() => {
 }
 
 </style>
-
 
