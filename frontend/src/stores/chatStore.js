@@ -184,7 +184,9 @@ function normalizeConversation(raw) {
     card ??
     (staticRole
       ? {
-          id: staticRole.id,
+          id: staticRole.slug ?? staticRole.id,
+          slug: staticRole.slug ?? staticRole.id ?? null,
+          gender: staticRole.gender ?? null,
           name: staticRole.name,
           persona: staticRole.persona ?? '',
           summary: staticRole.bio ?? staticRole.persona ?? '',

@@ -59,12 +59,14 @@ export function buildConversationMetadataFromRole(role) {
   const mapped = mapRoleToConversationMetadata(role);
   return {
     aiRoleId: mapped?.aiRoleId ?? role?.id ?? null,
+    aiRoleSlug: mapped?.aiRoleSlug ?? role?.slug ?? null,
     aiName: mapped?.aiName ?? role?.name ?? 'AI 夥伴',
     aiPersona: mapped?.aiPersona ?? role?.persona ?? '',
     bio: mapped?.bio ?? role?.summary ?? role?.persona ?? '',
     tags: Array.isArray(mapped?.tags) ? mapped.tags : Array.isArray(role?.tags) ? role.tags : [],
-    image: mapped?.image ?? role?.portraitImageUrl ?? role?.coverImageUrl ?? null,
     profile: mapped?.profile ?? role?.profile ?? null,
+    gender: mapped?.gender ?? role?.gender ?? role?.profile?.gender ?? '無性別',
+    image: mapped?.image ?? role?.portraitImageUrl ?? role?.coverImageUrl ?? null,
     card: mapped?.card ?? null,
   };
 }

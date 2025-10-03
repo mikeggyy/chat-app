@@ -1,8 +1,42 @@
-﻿import { firebaseAdmin, firestore } from './firebaseAdmin.js';
+import crypto from 'node:crypto';
+import { firebaseAdmin, firestore } from './firebaseAdmin.js';
 import { seedAiRoles } from '../data/aiRolesSeed.js';
 
 const { FieldValue } = firebaseAdmin.firestore;
 const rolesCollection = firestore.collection('ai_roles');
+
+const ROLE_ID_LENGTH = 10;
+const ROLE_ID_ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+const ROLE_ID_MAX_ATTEMPTS = 12;
+const DEFAULT_ROLE_GENDER = '無性別';
+const GENDER_ALIASES = new Map([
+  ['male', '男'],
+  ['m', '男'],
+  ['boy', '男'],
+  ['男性', '男'],
+  ['man', '男'],
+  ['男', '男'],
+  ['gentleman', '男'],
+  ['sir', '男'],
+  ['女', '女'],
+  ['female', '女'],
+  ['f', '女'],
+  ['girl', '女'],
+  ['女性', '女'],
+  ['woman', '女'],
+  ['lady', '女'],
+  ['madam', '女'],
+  ['無性別', '無性別'],
+  ['none', '無性別'],
+  ['無', '無性別'],
+  ['未指定', '無性別'],
+  ['unknown', '無性別'],
+  ['n/a', '無性別'],
+  ['na', '無性別'],
+  ['undefined', '無性別'],
+  ['neutral', '無性別'],
+]);
+const GENDER_CANONICAL_VALUES = ['男', '女', '無性別'];
 
 function requestError(message, status = 400) {
   const error = new Error(message);
@@ -31,6 +65,116 @@ function optionalString(value, maxLength) {
   return trimString(value, maxLength);
 }
 
+
+function normalizeGenderValue(value) {
+  const trimmed = trimString(value);
+  if (!trimmed) {
+    return null;
+  }
+
+  const lower = trimmed.toLowerCase();
+  if (GENDER_ALIASES.has(lower)) {
+    return GENDER_ALIASES.get(lower);
+  }
+  if (GENDER_ALIASES.has(trimmed)) {
+    return GENDER_ALIASES.get(trimmed);
+  }
+  if (GENDER_CANONICAL_VALUES.includes(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+function sanitizeGender(value, { required = false } = {}) {
+  const normalized = normalizeGenderValue(value);
+  if (normalized) {
+    return normalized;
+  }
+
+  const hasValue = typeof value === 'string' ? value.trim().length > 0 : value != null;
+  if (required || hasValue) {
+    throw requestError('性別僅能為 男、女 或 無性別');
+  }
+
+  return null;
+}
+
+function generateRoleIdCandidate() {
+  const bytes = crypto.randomBytes(ROLE_ID_LENGTH);
+  const alphabetLength = ROLE_ID_ALPHABET.length;
+  let id = '';
+
+  for (let index = 0; index < bytes.length; index += 1) {
+    const charIndex = bytes[index] % alphabetLength;
+    id += ROLE_ID_ALPHABET.charAt(charIndex);
+  }
+
+  return id;
+}
+
+async function generateUniqueRoleDocId() {
+  for (let attempt = 0; attempt < ROLE_ID_MAX_ATTEMPTS; attempt += 1) {
+    const candidate = generateRoleIdCandidate();
+    const snapshot = await rolesCollection.doc(candidate).get();
+    if (!snapshot.exists) {
+      return candidate;
+    }
+  }
+
+  throw requestError('無法產生唯一的角色 ID，請稍後再試');
+}
+async function findRoleDocBySlug(slugValue) {
+  const trimmed = trimString(slugValue);
+  if (!trimmed) {
+    return null;
+  }
+
+  const normalized = slugify(trimmed);
+  if (!normalized) {
+    return null;
+  }
+
+  const snapshot = await rolesCollection.where('slug', '==', normalized).limit(1).get();
+  if (snapshot.empty) {
+    return null;
+  }
+
+  const doc = snapshot.docs[0];
+  return { docRef: doc.ref, snapshot: doc };
+}
+
+async function ensureUniqueSlug(slug, excludeDocId) {
+  const normalized = slugify(slug);
+  if (!normalized) {
+    throw requestError('slug 為必填欄位');
+  }
+
+  const snapshot = await rolesCollection.where('slug', '==', normalized).limit(1).get();
+  if (!snapshot.empty) {
+    const doc = snapshot.docs[0];
+    if (!excludeDocId || doc.id !== excludeDocId) {
+      throw requestError('角色代稱已存在，請使用其他代稱。', 409);
+    }
+  }
+
+  return normalized;
+}
+
+async function resolveRoleDocument(identifier) {
+  const trimmed = trimString(identifier);
+  if (!trimmed) {
+    return null;
+  }
+
+  const directRef = rolesCollection.doc(trimmed);
+  const directSnapshot = await directRef.get();
+  if (directSnapshot.exists) {
+    return { docRef: directRef, snapshot: directSnapshot };
+  }
+
+  return findRoleDocBySlug(trimmed);
+}
 function sanitizeStringArray(value, { fieldName, maxItems = 8, maxLength = 64, allowEmpty = false }) {
   const source = Array.isArray(value) ? value : [];
   const sanitized = [];
@@ -111,7 +255,7 @@ function sanitizeGuardrails(value) {
 
 function sanitizeProfile(value) {
   const profile = typeof value === 'object' && value !== null ? value : {};
-  const gender = optionalString(profile.gender, 16);
+  const gender = sanitizeGender(profile.gender);
   const age = optionalString(profile.age, 16);
   const occupation = optionalString(profile.occupation, 120);
   const hometown = optionalString(profile.hometown, 80);
@@ -221,7 +365,28 @@ function sanitizeRolePayload(input) {
     throw requestError('角色資料格式不正確');
   }
 
+  const slugSource =
+    input.slug ??
+    input.slugId ??
+    input.publicId ??
+    input.legacyId ??
+    input.id ??
+    input.name;
+  const slug = slugify(slugSource);
+  if (!slug) {
+    throw requestError('slug 為必填欄位');
+  }
+
+  const gender = sanitizeGender(input.gender, { required: true }) ?? DEFAULT_ROLE_GENDER;
+  const profile = sanitizeProfile(input.profile);
+  const normalizedProfile = profile && typeof profile === 'object' ? { ...profile } : {};
+  if (!normalizedProfile.gender) {
+    normalizedProfile.gender = gender;
+  }
+
   const payload = {
+    slug,
+    gender,
     name: requireString('name', input.name, 80),
     persona: requireString('persona', input.persona, 120),
     summary: requireString('summary', input.summary, 400),
@@ -240,7 +405,7 @@ function sanitizeRolePayload(input) {
     portraitImageUrl: optionalString(input.portraitImageUrl, 512),
     accentColor: optionalString(input.accentColor, 16),
     traits: sanitizeTraits(input.traits),
-    profile: sanitizeProfile(input.profile),
+    profile: normalizedProfile,
     prompt: sanitizePrompt(input.prompt),
     guardrails: sanitizeGuardrails(input.guardrails),
     visibility: sanitizeVisibility(input.visibility),
@@ -268,8 +433,26 @@ export function serializeAiRoleDocument(snapshot) {
   const pricing = data.pricing ?? {};
   const metrics = data.metrics ?? {};
 
+  const slugSource =
+    data.slug ??
+    data.slugId ??
+    data.publicId ??
+    data.legacyId ??
+    data.id ??
+    snapshot.id;
+  const slug = slugify(slugSource) ?? snapshot.id;
+  const gender = normalizeGenderValue(data.gender) ?? DEFAULT_ROLE_GENDER;
+
+  const profileSource =
+    data.profile && typeof data.profile === 'object' ? { ...data.profile } : {};
+  if (!profileSource.gender) {
+    profileSource.gender = gender;
+  }
+
   return {
     id: snapshot.id,
+    slug,
+    gender,
     name: data.name ?? null,
     persona: data.persona ?? null,
     summary: data.summary ?? null,
@@ -279,7 +462,7 @@ export function serializeAiRoleDocument(snapshot) {
     portraitImageUrl: data.portraitImageUrl ?? null,
     accentColor: data.accentColor ?? null,
     traits: data.traits ?? {},
-    profile: data.profile ?? {},
+    profile: profileSource,
     prompt: data.prompt ?? {},
     guardrails: data.guardrails ?? {},
     visibility: {
@@ -307,22 +490,19 @@ export async function seedRolesIfNeeded(seed = seedAiRoles) {
   }
 
   for (const role of seed) {
-    const docId = slugify(role.id) ?? slugify(role.name);
-    if (!docId) continue;
-
-    const docRef = rolesCollection.doc(docId);
-    const snapshot = await docRef.get();
-
-    if (snapshot.exists) {
+    const sanitized = sanitizeRolePayload(role);
+    const existing = await findRoleDocBySlug(sanitized.slug);
+    if (existing) {
       continue;
     }
 
-    const payload = sanitizeRolePayload(role);
+    const docId = await generateUniqueRoleDocId();
+    const docRef = rolesCollection.doc(docId);
     const now = FieldValue.serverTimestamp();
 
     await docRef.set(
       {
-        ...payload,
+        ...sanitized,
         id: docId,
         createdAt: now,
         updatedAt: now,
@@ -352,8 +532,8 @@ export async function listAiRoles({ ensureSeed = true, status } = {}) {
 }
 
 export async function getAiRoleById(id, { ensureSeed = false } = {}) {
-  const docId = slugify(id);
-  if (!docId) {
+  const trimmed = trimString(id);
+  if (!trimmed) {
     throw requestError('角色 ID 格式不正確');
   }
 
@@ -361,9 +541,12 @@ export async function getAiRoleById(id, { ensureSeed = false } = {}) {
     await seedRolesIfNeeded();
   }
 
-  const snapshot = await rolesCollection.doc(docId).get();
-  const role = serializeAiRoleDocument(snapshot);
+  const resolved = await resolveRoleDocument(trimmed);
+  if (!resolved) {
+    throw requestError('找不到指定的 AI 角色', 404);
+  }
 
+  const role = serializeAiRoleDocument(resolved.snapshot);
   if (!role) {
     throw requestError('找不到指定的 AI 角色', 404);
   }
@@ -373,25 +556,15 @@ export async function getAiRoleById(id, { ensureSeed = false } = {}) {
 
 export async function createAiRole(payload) {
   const sanitized = sanitizeRolePayload(payload);
-  const providedId = slugify(payload.id);
-  const docId = providedId ?? slugify(sanitized.name);
-
-  if (!docId) {
-    throw requestError('無法從名稱產生有效的角色 ID');
-  }
-
+  const normalizedSlug = await ensureUniqueSlug(sanitized.slug);
+  const docId = await generateUniqueRoleDocId();
   const docRef = rolesCollection.doc(docId);
-  const snapshot = await docRef.get();
-
-  if (snapshot.exists) {
-    throw requestError('角色 ID 已存在，請使用其他 ID。', 409);
-  }
-
   const now = FieldValue.serverTimestamp();
 
   await docRef.set(
     {
       ...sanitized,
+      slug: normalizedSlug,
       id: docId,
       createdAt: now,
       updatedAt: now,
@@ -404,30 +577,30 @@ export async function createAiRole(payload) {
 }
 
 export async function updateAiRole(id, payload) {
-  const docId = slugify(id);
-  if (!docId) {
+  const trimmed = trimString(id);
+  if (!trimmed) {
     throw requestError('角色 ID 格式不正確');
   }
 
-  const sanitized = sanitizeRolePayload(payload);
-  const docRef = rolesCollection.doc(docId);
-  const snapshot = await docRef.get();
-
-  if (!snapshot.exists) {
+  const resolved = await resolveRoleDocument(trimmed);
+  if (!resolved) {
     throw requestError('找不到指定的 AI 角色', 404);
   }
 
+  const sanitized = sanitizeRolePayload(payload);
+  const normalizedSlug = await ensureUniqueSlug(sanitized.slug, resolved.docRef.id);
   const now = FieldValue.serverTimestamp();
 
-  await docRef.set(
+  await resolved.docRef.set(
     {
       ...sanitized,
-      id: docId,
+      slug: normalizedSlug,
+      id: resolved.docRef.id,
       updatedAt: now,
     },
     { merge: true }
   );
 
-  const saved = await docRef.get();
+  const saved = await resolved.docRef.get();
   return serializeAiRoleDocument(saved);
 }

@@ -1,6 +1,8 @@
 export const aiRoles = [
   {
-    id: 'emilia-saint',
+    id: 'EmiL1a9Q2Z',
+    slug: 'emilia-saint',
+    gender: '女',
     name: '神聖的艾米莉雅',
     persona: '修道院心靈導師',
     bio: '溫柔而堅定的修女，擅長傾聽，懂得用充滿信任的眼神陪你走過每段低谷。',
@@ -10,7 +12,9 @@ export const aiRoles = [
     sampleMessages: ['如果你願意，今晚的星光都可以為我們而亮。'],
   },
   {
-    id: 'luna-dj',
+    id: 'LunA7Dj4X3',
+    slug: 'luna-dj',
+    gender: '女',
     name: '月光 DJ 露娜',
     persona: '深夜派對靈魂',
     bio: '在月光下混音的靈魂 DJ，自信又真誠，總是把歡笑與安慰調成最剛好的節奏。',
@@ -20,7 +24,9 @@ export const aiRoles = [
     sampleMessages: ['下個 set 想聽什麼？我想把你的心情也 remix 進今晚的節拍。'],
   },
   {
-    id: 'sora-officer',
+    id: 'S0R4a8V5N1',
+    slug: 'sora-officer',
+    gender: '男',
     name: '流星旅者諾瓦',
     persona: '宇宙巡航官',
     bio: '穿梭星際的探路者，理性又深情，願意陪你一起在黑夜裡找尋屬於自己的光。',
@@ -31,26 +37,43 @@ export const aiRoles = [
   },
 ];
 
-const aiRoleMap = aiRoles.reduce((accumulator, role) => {
-  accumulator[role.id] = role;
-  return accumulator;
-}, {});
+const aiRoleMapById = new Map();
+const aiRoleMapBySlug = new Map();
 
-export function getAiRoleById(id) {
-  return aiRoleMap[id] ?? null;
+for (const role of aiRoles) {
+  if (role.id) {
+    aiRoleMapById.set(role.id, role);
+  }
+  if (role.slug) {
+    aiRoleMapBySlug.set(role.slug, role);
+  }
+}
+
+export function getAiRoleById(identifier) {
+  if (typeof identifier !== 'string' || !identifier.length) {
+    return null;
+  }
+
+  const trimmed = identifier.trim();
+  if (!trimmed.length) {
+    return null;
+  }
+
+  return aiRoleMapById.get(trimmed) ?? aiRoleMapBySlug.get(trimmed) ?? null;
 }
 
 export function mapAiRoleToCard(role) {
   if (!role) return null;
   return {
-    id: role.id,
+    id: role.slug ?? role.id,
+    slug: role.slug ?? role.id,
+    gender: role.gender ?? null,
     name: role.name,
     persona: role.persona,
     bio: role.bio,
-    summary: role.summary ?? role.bio ?? "",
+    summary: role.summary ?? role.bio ?? '',
     tags: role.tags,
     image: role.image,
     sampleMessages: Array.isArray(role.sampleMessages) ? role.sampleMessages : [],
   };
 }
-
